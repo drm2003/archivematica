@@ -349,3 +349,23 @@ TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates"}]
 
 # Apply email settings
 globals().update(email_settings.get_settings(config))
+
+# XML metadata validation:
+# - Use schema location, namespace or tag as key.
+# - Use local path or external URL for the schema file as value.
+# - The process looks for the schema location in the root element attributes:
+#   - `xsi:noNamespaceSchemaLocation`.
+#   - `xsi:schemaLocation` (removes the namespace when present).
+# - If no schema is defined, the root element namespace is used as the key.
+# - If no namespace is used, the root element tag name is used as the key.
+# - Allows DTD, XSD and RELAX NG schema types (.dtd, .xsd, .rng).
+XML_VALIDATION = {
+    "http://www.loc.gov/standards/mods/v3/mods-3-5.xsd": os.path.join(
+        CLIENT_ASSETS_DIRECTORY, "mods", "mods-3-5.xsd"
+    ),
+    "http://www.loc.gov/standards/mods/v3/mods-3-7.xsd": "http://www.loc.gov/standards/mods/v3/mods-3-7.xsd",
+    "http://www.lido-schema.org": os.path.join(
+        CLIENT_ASSETS_DIRECTORY, "lido", "lido-v1.0.xsd"
+    ),
+    "ead": "http://lcweb2.loc.gov/xmlcommon/dtds/ead2002/ead.dtd",
+}

@@ -372,6 +372,7 @@ def _get_index_settings():
     return {
         "index": {
             "mapping": {
+                "ignore_malformed": True,
                 "total_fields": {"limit": TOTAL_FIELDS_LIMIT},
                 "depth": {"limit": DEPTH_LIMIT},
             },
@@ -933,9 +934,7 @@ def _get_descriptive_section_metadata(dmdSec):
         dmdSec, 'mets:mdWrap[@MDTYPE="DC"]/mets:xmlData/dcterms:dublincore'
     )
     # look for non dublincore (custom) metadata
-    result += ns.xml_findall_premis(
-        dmdSec, 'mets:mdWrap[@MDTYPE="OTHER"][@OTHERMDTYPE="CUSTOM"]/mets:xmlData'
-    )
+    result += ns.xml_findall_premis(dmdSec, 'mets:mdWrap[@MDTYPE="OTHER"]/mets:xmlData')
     return result
 
 

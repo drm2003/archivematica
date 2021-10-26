@@ -41,6 +41,7 @@ import six
 
 django.setup()
 # dashboard
+from django.conf import settings as mcpclient_settings
 from django.utils import timezone
 from main.models import (
     Agent,
@@ -282,6 +283,104 @@ def createDMDIDsFromCSVMetadata(job, path, state):
     metadata = state.CSV_METADATA.get(unicodeToStr(path), {})
     dmdsecs = createDmdSecsFromCSVParsedMetadata(job, metadata, state)
     return " ".join([d.get("ID") for d in dmdsecs])
+
+
+def createDMDFromXML(job, path, baseDirectoryPath, state):
+    # TODO:
+    # - XML association:
+    #   - Avoid filenames mismatch (metadata XML filename may have changed).
+    #   - Consider equal filenames from different transfer sources?
+    #   - Allow multiple XML metadata per file?
+    #   - Use extra CSV to relate XML file(s)?
+    xmlFilename = os.path.splitext(os.path.relpath(path, "objects"))[0] + ".xml"
+    transferMetadata = os.path.join(
+        baseDirectoryPath, os.path.join("objects", "metadata", "transfers")
+    )
+    if not os.path.isdir(transferMetadata):
+        return
+    for dir in os.listdir(transferMetadata):
+        xmlPath = os.path.join(transferMetadata, dir, xmlFilename)
+        if not os.path.isfile(xmlPath):
+            continue
+        try:
+            tree = etree.parse(xmlPath)
+            valid, errors = _validate_xml(tree)
+            if not valid:
+                job.pyprint(
+                    "Errors encountered validating {}:".format(xmlPath),
+                    file=sys.stderr,
+                )
+                for error in errors:
+                    job.pyprint("\t- {}".format(error), file=sys.stderr)
+                return
+        except etree.LxmlError as err:
+            job.pyprint(
+                "Could not parse or validate {}\n\t- {}".format(xmlPath, err),
+                file=sys.stderr,
+            )
+            return
+        root = tree.getroot()
+        _, _, tag = root.tag.partition("}")
+        state.globalDmdSecCounter += 1
+        DMDID = "dmdSec_" + state.globalDmdSecCounter.__str__()
+        dmdSec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
+        state.dmdSecs.append(dmdSec)
+        mdWrap = etree.SubElement(dmdSec, ns.metsBNS + "mdWrap")
+        mdWrap.set("MDTYPE", "OTHER")
+        mdWrap.set("OTHERMDTYPE", tag.upper())
+        xmlData = etree.SubElement(mdWrap, ns.metsBNS + "xmlData")
+        xmlData.append(root)
+        return DMDID
+
+
+def _validate_xml(tree):
+    schema_uri, checked_keys = _get_schema_uri(tree)
+    if not schema_uri:
+        return False, ["Schema not found for keys: {}".format(checked_keys)]
+    schema_type = schema_uri.split(".")[-1]
+    try:
+        if schema_type == "dtd":
+            schema = etree.DTD(schema_uri)
+        elif schema_type == "xsd":
+            schema_contents = etree.parse(schema_uri)
+            schema = etree.XMLSchema(schema_contents)
+        elif schema_type == "rng":
+            schema_contents = etree.parse(schema_uri)
+            schema = etree.RelaxNG(schema_contents)
+        else:
+            return False, ["Unknown schema type: {}".format(schema_type)]
+    except etree.LxmlError as err:
+        return False, ["Could not parse schema file: {}".format(schema_uri), err]
+    if not schema.validate(tree):
+        return False, schema.error_log
+    return True, []
+
+
+def _get_schema_uri(tree):
+    XSI = "http://www.w3.org/2001/XMLSchema-instance"
+    VALIDATION = mcpclient_settings.XML_VALIDATION
+    key = None
+    checked_keys = []
+    schema_location = tree.xpath(
+        "/*/@xsi:noNamespaceSchemaLocation", namespaces={"xsi": XSI}
+    )
+    if schema_location:
+        key = schema_location[0].strip()
+        checked_keys.append(key)
+    if not key or key not in VALIDATION:
+        schema_location = tree.xpath("/*/@xsi:schemaLocation", namespaces={"xsi": XSI})
+        if schema_location:
+            key = schema_location[0].strip().split()[-1]
+            checked_keys.append(key)
+    if not key or key not in VALIDATION:
+        key = tree.xpath("namespace-uri(.)")
+        checked_keys.append(key)
+    if not key or key not in VALIDATION:
+        key = tree.xpath("local-name(.)")
+        checked_keys.append(key)
+    if not key or key not in VALIDATION:
+        return None, checked_keys
+    return VALIDATION[key], checked_keys
 
 
 def createDmdSecsFromCSVParsedMetadata(job, metadata, state):
@@ -732,7 +831,7 @@ def createDigiprovMD(fileUUID, state):
 
 
 def createEvent(event_record):
-    """ Returns a PREMIS Event. """
+    """Returns a PREMIS Event."""
     event = etree.Element(ns.premisBNS + "event", nsmap={"premis": ns.premisNS})
     event.set(
         ns.xsiBNS + "schemaLocation",
@@ -790,7 +889,7 @@ def createEvent(event_record):
 
 
 def createAgent(agent_record):
-    """ Creates a PREMIS Agent as a SubElement of digiprovMD. """
+    """Creates a PREMIS Agent as a SubElement of digiprovMD."""
     agent = etree.Element(ns.premisBNS + "agent", nsmap={"premis": ns.premisNS})
     agent.set(
         ns.xsiBNS + "schemaLocation",
@@ -1141,6 +1240,16 @@ def createFileSec(
                         f.originallocation.replace("%transferDirectory%", "", 1),
                         state,
                     )
+                    XMLDMDID = createDMDFromXML(
+                        job,
+                        f.originallocation.replace("%transferDirectory%", "", 1),
+                        baseDirectoryPath,
+                        state,
+                    )
+                    if DMDIDS and XMLDMDID:
+                        DMDIDS += " " + XMLDMDID
+                    elif XMLDMDID:
+                        DMDIDS = XMLDMDID
                     if DMDIDS:
                         fileDiv.set("DMDID", DMDIDS)
                     # More special TRIM processing
