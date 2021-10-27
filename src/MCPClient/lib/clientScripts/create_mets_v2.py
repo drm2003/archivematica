@@ -285,29 +285,29 @@ def createDMDIDsFromCSVMetadata(job, path, state):
     return " ".join([d.get("ID") for d in dmdsecs])
 
 
-def createDMDFromXML(job, path, baseDirectoryPath, state):
+def create_dmd_from_xml(job, path, base_directory_path, state):
     # TODO:
     # - XML association:
     #   - Avoid filenames mismatch (metadata XML filename may have changed).
     #   - Consider equal filenames from different transfer sources?
     #   - Allow multiple XML metadata per file?
     #   - Use extra CSV to relate XML file(s)?
-    xmlFilename = os.path.splitext(os.path.relpath(path, "objects"))[0] + ".xml"
-    transferMetadata = os.path.join(
-        baseDirectoryPath, os.path.join("objects", "metadata", "transfers")
+    xml_filename = os.path.splitext(os.path.relpath(path, "objects"))[0] + ".xml"
+    transfer_metadata = os.path.join(
+        base_directory_path, os.path.join("objects", "metadata", "transfers")
     )
-    if not os.path.isdir(transferMetadata):
+    if not os.path.isdir(transfer_metadata):
         return
-    for dir in os.listdir(transferMetadata):
-        xmlPath = os.path.join(transferMetadata, dir, xmlFilename)
-        if not os.path.isfile(xmlPath):
+    for dir in os.listdir(transfer_metadata):
+        xml_path = os.path.join(transfer_metadata, dir, xml_filename)
+        if not os.path.isfile(xml_path):
             continue
         try:
-            tree = etree.parse(xmlPath)
+            tree = etree.parse(xml_path)
             valid, errors = _validate_xml(tree)
             if not valid:
                 job.pyprint(
-                    "Errors encountered validating {}:".format(xmlPath),
+                    "Errors encountered validating {}:".format(xml_path),
                     file=sys.stderr,
                 )
                 for error in errors:
@@ -315,7 +315,7 @@ def createDMDFromXML(job, path, baseDirectoryPath, state):
                 return
         except etree.LxmlError as err:
             job.pyprint(
-                "Could not parse or validate {}\n\t- {}".format(xmlPath, err),
+                "Could not parse or validate {}\n\t- {}".format(xml_path, err),
                 file=sys.stderr,
             )
             return
@@ -323,13 +323,13 @@ def createDMDFromXML(job, path, baseDirectoryPath, state):
         _, _, tag = root.tag.partition("}")
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_" + state.globalDmdSecCounter.__str__()
-        dmdSec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
-        state.dmdSecs.append(dmdSec)
-        mdWrap = etree.SubElement(dmdSec, ns.metsBNS + "mdWrap")
-        mdWrap.set("MDTYPE", "OTHER")
-        mdWrap.set("OTHERMDTYPE", tag.upper())
-        xmlData = etree.SubElement(mdWrap, ns.metsBNS + "xmlData")
-        xmlData.append(root)
+        dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
+        state.dmdSecs.append(dmd_sec)
+        md_wrap = etree.SubElement(dmd_sec, ns.metsBNS + "mdWrap")
+        md_wrap.set("MDTYPE", "OTHER")
+        md_wrap.set("OTHERMDTYPE", tag.upper())
+        xml_data = etree.SubElement(md_wrap, ns.metsBNS + "xmlData")
+        xml_data.append(root)
         return DMDID
 
 
@@ -1240,7 +1240,7 @@ def createFileSec(
                         f.originallocation.replace("%transferDirectory%", "", 1),
                         state,
                     )
-                    XMLDMDID = createDMDFromXML(
+                    XMLDMDID = create_dmd_from_xml(
                         job,
                         f.originallocation.replace("%transferDirectory%", "", 1),
                         baseDirectoryPath,
