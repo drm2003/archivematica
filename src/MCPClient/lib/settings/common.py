@@ -368,4 +368,5 @@ XML_VALIDATION = {
         CLIENT_ASSETS_DIRECTORY, "lido", "lido-v1.0.xsd"
     ),
     "ead": "http://lcweb2.loc.gov/xmlcommon/dtds/ead2002/ead.dtd",
+    "foo": os.path.join(CLIENT_ASSETS_DIRECTORY, "foo", "foo.rng"),
 }
