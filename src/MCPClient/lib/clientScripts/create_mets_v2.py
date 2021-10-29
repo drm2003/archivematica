@@ -24,6 +24,7 @@
 
 import collections
 import copy
+import csv
 from glob import glob
 from itertools import chain
 import lxml.etree as etree
@@ -285,21 +286,39 @@ def createDMDIDsFromCSVMetadata(job, path, state):
     return " ".join([d.get("ID") for d in dmdsecs])
 
 
-def create_dmd_from_xml(job, path, base_directory_path, state):
-    # TODO:
-    # - XML association:
-    #   - Avoid filenames mismatch (metadata XML filename may have changed).
-    #   - Consider equal filenames from different transfer sources?
-    #   - Allow multiple XML metadata per file?
-    #   - Use extra CSV to relate XML file(s)?
-    xml_filename = os.path.splitext(os.path.relpath(path, "objects"))[0] + ".xml"
+def get_xml_metadata_files_mapping(job, base_directory_path):
+    mapping = {}
     transfer_metadata = os.path.join(
         base_directory_path, os.path.join("objects", "metadata", "transfers")
     )
     if not os.path.isdir(transfer_metadata):
+        return mapping
+    for dir_ in os.listdir(transfer_metadata):
+        source_metadata = os.path.join(transfer_metadata, dir_, "source-metadata.csv")
+        if not os.path.isfile(source_metadata):
+            continue
+        try:
+            with open(source_metadata, "rU") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if not all(k in row for k in ["filename", "metadata"]):
+                        continue
+                    if row["filename"] not in mapping:
+                        mapping[row["filename"]] = []
+                    mapping[row["filename"]].append(
+                        os.path.join(transfer_metadata, dir_, row["metadata"])
+                    )
+        except OSError:
+            job.pyprint("Could not read {}".format(source_metadata), file=sys.stderr)
+            continue
+    return mapping
+
+
+def create_dmd_sections_from_xml(job, path, state):
+    dmd_ids = []
+    if path not in state.xml_metadata_files_mapping:
         return
-    for dir in os.listdir(transfer_metadata):
-        xml_path = os.path.join(transfer_metadata, dir, xml_filename)
+    for xml_path in state.xml_metadata_files_mapping[path]:
         if not os.path.isfile(xml_path):
             continue
         try:
@@ -312,13 +331,13 @@ def create_dmd_from_xml(job, path, base_directory_path, state):
                 )
                 for error in errors:
                     job.pyprint("\t- {}".format(error), file=sys.stderr)
-                return
+                continue
         except etree.LxmlError as err:
             job.pyprint(
                 "Could not parse or validate {}\n\t- {}".format(xml_path, err),
                 file=sys.stderr,
             )
-            return
+            continue
         root = tree.getroot()
         _, _, tag = root.tag.partition("}")
         state.globalDmdSecCounter += 1
@@ -330,7 +349,8 @@ def create_dmd_from_xml(job, path, base_directory_path, state):
         md_wrap.set("OTHERMDTYPE", tag.upper())
         xml_data = etree.SubElement(md_wrap, ns.metsBNS + "xmlData")
         xml_data.append(root)
-        return DMDID
+        dmd_ids.append(DMDID)
+    return " ".join(dmd_ids)
 
 
 def _validate_xml(tree):
@@ -1240,16 +1260,15 @@ def createFileSec(
                         f.originallocation.replace("%transferDirectory%", "", 1),
                         state,
                     )
-                    XMLDMDID = create_dmd_from_xml(
+                    XMLDMDIDS = create_dmd_sections_from_xml(
                         job,
                         f.originallocation.replace("%transferDirectory%", "", 1),
-                        baseDirectoryPath,
                         state,
                     )
-                    if DMDIDS and XMLDMDID:
-                        DMDIDS += " " + XMLDMDID
-                    elif XMLDMDID:
-                        DMDIDS = XMLDMDID
+                    if DMDIDS and XMLDMDIDS:
+                        DMDIDS += " " + XMLDMDIDS
+                    elif XMLDMDIDS:
+                        DMDIDS = XMLDMDIDS
                     if DMDIDS:
                         fileDiv.set("DMDID", DMDIDS)
                     # More special TRIM processing
@@ -1821,6 +1840,9 @@ def main(
         return
 
     state.CSV_METADATA = parseMetadata(job, baseDirectoryPath, state)
+    state.xml_metadata_files_mapping = get_xml_metadata_files_mapping(
+        job, baseDirectoryPath
+    )
 
     baseDirectoryPath = os.path.join(baseDirectoryPath, "")
     objectsDirectoryPath = os.path.join(baseDirectoryPath, "objects")
