@@ -30,6 +30,7 @@ from itertools import chain
 import lxml.etree as etree
 from optparse import OptionParser
 import os
+from pathlib import Path
 import pprint
 import re
 import sys
@@ -288,17 +289,15 @@ def createDMDIDsFromCSVMetadata(job, path, state):
 
 def get_xml_metadata_files_mapping(job, base_directory_path):
     mapping = {}
-    transfer_metadata = os.path.join(
-        base_directory_path, os.path.join("objects", "metadata", "transfers")
-    )
-    if not os.path.isdir(transfer_metadata):
+    transfer_metadata = Path(base_directory_path) / "objects" / "metadata" / "transfers"
+    if not transfer_metadata.is_dir():
         return mapping
-    for dir_ in os.listdir(transfer_metadata):
-        source_metadata = os.path.join(transfer_metadata, dir_, "source-metadata.csv")
-        if not os.path.isfile(source_metadata):
+    for dir_ in transfer_metadata.iterdir():
+        source_metadata = dir_ / "source-metadata.csv"
+        if not source_metadata.is_file():
             continue
         try:
-            with open(source_metadata, "rU") as f:
+            with source_metadata.open("rU") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if not all(k in row for k in ["filename", "metadata"]):
@@ -319,7 +318,7 @@ def create_dmd_sections_from_xml(job, path, state):
     if path not in state.xml_metadata_files_mapping:
         return
     for xml_path in state.xml_metadata_files_mapping[path]:
-        if not os.path.isfile(xml_path):
+        if not Path(xml_path).is_file():
             continue
         try:
             tree = etree.parse(xml_path)
