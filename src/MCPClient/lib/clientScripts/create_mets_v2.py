@@ -297,7 +297,7 @@ def get_xml_metadata_files_mapping(job, base_directory_path):
         if not source_metadata.is_file():
             continue
         try:
-            with source_metadata.open("rU") as f:
+            with source_metadata.open() as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if not all(k in row for k in ["filename", "metadata"]):
