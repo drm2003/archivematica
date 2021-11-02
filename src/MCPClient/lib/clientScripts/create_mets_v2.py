@@ -322,20 +322,20 @@ def create_dmd_sections_from_xml(job, path, state):
             continue
         try:
             tree = etree.parse(xml_path)
-            valid, errors = _validate_xml(tree)
-            if not valid:
-                job.pyprint(
-                    "Errors encountered validating {}:".format(xml_path),
-                    file=sys.stderr,
-                )
-                for error in errors:
-                    job.pyprint("\t- {}".format(error), file=sys.stderr)
-                continue
         except etree.LxmlError as err:
             job.pyprint(
-                "Could not parse or validate {}\n\t- {}".format(xml_path, err),
+                "Could not parse {}\n\t- {}".format(xml_path, err),
                 file=sys.stderr,
             )
+            continue
+        valid, errors = _validate_xml(tree)
+        if not valid:
+            job.pyprint(
+                "Errors encountered validating {}:".format(xml_path),
+                file=sys.stderr,
+            )
+            for error in errors:
+                job.pyprint("\t- {}".format(error), file=sys.stderr)
             continue
         root = tree.getroot()
         tag = etree.QName(root).localname
