@@ -837,6 +837,7 @@ class TestCustomStructMap(TempDirMixin, TestCase):
         self.state.globalStructMapCounter = random.choice(
             [x for x in range(arbitrary_max_structmaps)]
         )
+        self.state.xml_metadata_files_mapping = {}
         self.structmap_div_element = create_mets_v2.createFileSec(
             job=Job("stub", "stub", []),
             directoryPath=self.objects_dir,
