@@ -1133,16 +1133,12 @@ def createFileSec(
         parentDiv, ns.metsBNS + "div", TYPE="Directory", LABEL=directoryName
     )
 
-    DMDIDS = createDMDIDsFromCSVMetadata(
-        job, directoryPath.replace(baseDirectoryPath, "", 1), state
-    )
-    if DMDIDS or dir_dmd_id:
-        if DMDIDS and dir_dmd_id:
-            structMapDiv.set("DMDID", dir_dmd_id + " " + DMDIDS)
-        elif DMDIDS:
-            structMapDiv.set("DMDID", DMDIDS)
-        else:
-            structMapDiv.set("DMDID", dir_dmd_id)
+    dir_relative_path = directoryPath.replace(baseDirectoryPath, "", 1)
+    DMDIDS = createDMDIDsFromCSVMetadata(job, dir_relative_path, state)
+    XMLDMDIDS = create_dmd_sections_from_xml(job, dir_relative_path, state)
+    DMDIDS = " ".join(i for i in [dir_dmd_id, DMDIDS, XMLDMDIDS] if i)
+    if DMDIDS:
+        structMapDiv.set("DMDID", DMDIDS)
 
     for item in directoryContents:
         itemdirectoryPath = os.path.join(directoryPath, item)
@@ -1254,14 +1250,17 @@ def createFileSec(
                     use = "original"
                 # Check for CSV-based Dublincore dmdSec
                 if use == "original":
+                    file_relative_path = f.originallocation.replace(
+                        "%transferDirectory%", "", 1
+                    )
                     DMDIDS = createDMDIDsFromCSVMetadata(
                         job,
-                        f.originallocation.replace("%transferDirectory%", "", 1),
+                        file_relative_path,
                         state,
                     )
                     XMLDMDIDS = create_dmd_sections_from_xml(
                         job,
-                        f.originallocation.replace("%transferDirectory%", "", 1),
+                        file_relative_path,
                         state,
                     )
                     DMDIDS = " ".join(i for i in [DMDIDS, XMLDMDIDS] if i)
