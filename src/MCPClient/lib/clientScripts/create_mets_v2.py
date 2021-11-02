@@ -1264,10 +1264,7 @@ def createFileSec(
                         f.originallocation.replace("%transferDirectory%", "", 1),
                         state,
                     )
-                    if DMDIDS and XMLDMDIDS:
-                        DMDIDS += " " + XMLDMDIDS
-                    elif XMLDMDIDS:
-                        DMDIDS = XMLDMDIDS
+                    DMDIDS = " ".join(i for i in [DMDIDS, XMLDMDIDS] if i)
                     if DMDIDS:
                         fileDiv.set("DMDID", DMDIDS)
                     # More special TRIM processing
