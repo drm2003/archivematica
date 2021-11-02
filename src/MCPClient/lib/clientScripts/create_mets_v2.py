@@ -340,7 +340,7 @@ def create_dmd_sections_from_xml(job, path, state):
         root = tree.getroot()
         tag = etree.QName(root).localname
         state.globalDmdSecCounter += 1
-        DMDID = "dmdSec_" + state.globalDmdSecCounter.__str__()
+        DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
         dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
         state.dmdSecs.append(dmd_sec)
         md_wrap = etree.SubElement(dmd_sec, ns.metsBNS + "mdWrap")
