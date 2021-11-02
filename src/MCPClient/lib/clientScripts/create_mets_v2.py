@@ -338,7 +338,7 @@ def create_dmd_sections_from_xml(job, path, state):
             )
             continue
         root = tree.getroot()
-        _, _, tag = root.tag.partition("}")
+        tag = etree.QName(root).localname
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_" + state.globalDmdSecCounter.__str__()
         dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
