@@ -304,12 +304,12 @@ def get_xml_metadata_files_mapping(job, base_directory_path, update=False):
             with source_metadata_path.open() as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if not all(k in row for k in ["filename", "metadata"]):
+                    if not all(k in row for k in ["filename", "metadata", "type"]):
                         continue
                     if row["filename"] not in mapping:
                         mapping[row["filename"]] = []
                     mapping[row["filename"]].append(
-                        source_metadata_path.parent / row["metadata"]
+                        (source_metadata_path.parent / row["metadata"], row["type"])
                     )
         except OSError:
             job.pyprint(
@@ -323,11 +323,12 @@ def create_dmd_sections_from_xml(job, path, state):
     dmd_ids = []
     if path not in state.xml_metadata_files_mapping:
         return
-    for xml_path in state.xml_metadata_files_mapping[path]:
+    for xml_path, xml_type in state.xml_metadata_files_mapping[path]:
         if not xml_path.is_file():
             continue
         try:
             tree = etree.parse(str(xml_path))
+            root = tree.getroot()
         except etree.LxmlError as err:
             job.pyprint(
                 "Could not parse {}\n\t- {}".format(xml_path, err),
@@ -343,15 +344,13 @@ def create_dmd_sections_from_xml(job, path, state):
             for error in errors:
                 job.pyprint("\t- {}".format(error), file=sys.stderr)
             continue
-        root = tree.getroot()
-        tag = etree.QName(root).localname
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
         dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
         state.dmdSecs.append(dmd_sec)
         md_wrap = etree.SubElement(dmd_sec, ns.metsBNS + "mdWrap")
         md_wrap.set("MDTYPE", "OTHER")
-        md_wrap.set("OTHERMDTYPE", tag.upper())
+        md_wrap.set("OTHERMDTYPE", xml_type)
         xml_data = etree.SubElement(md_wrap, ns.metsBNS + "xmlData")
         xml_data.append(root)
         dmd_ids.append(DMDID)
