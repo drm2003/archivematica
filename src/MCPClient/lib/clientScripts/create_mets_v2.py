@@ -309,7 +309,7 @@ def get_xml_metadata_files_mapping(job, base_directory_path, update=False):
                     if row["filename"] not in mapping:
                         mapping[row["filename"]] = []
                     mapping[row["filename"]].append(
-                        os.path.join(source_metadata_path.parent, row["metadata"])
+                        source_metadata_path.parent / row["metadata"]
                     )
         except OSError:
             job.pyprint(
@@ -324,10 +324,10 @@ def create_dmd_sections_from_xml(job, path, state):
     if path not in state.xml_metadata_files_mapping:
         return
     for xml_path in state.xml_metadata_files_mapping[path]:
-        if not Path(xml_path).is_file():
+        if not xml_path.is_file():
             continue
         try:
-            tree = etree.parse(xml_path)
+            tree = etree.parse(str(xml_path))
         except etree.LxmlError as err:
             job.pyprint(
                 "Could not parse {}\n\t- {}".format(xml_path, err),
