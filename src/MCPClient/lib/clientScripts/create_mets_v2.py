@@ -287,17 +287,21 @@ def createDMDIDsFromCSVMetadata(job, path, state):
     return " ".join([d.get("ID") for d in dmdsecs])
 
 
-def get_xml_metadata_files_mapping(job, base_directory_path):
+def get_xml_metadata_files_mapping(job, base_directory_path, update=False):
     mapping = {}
-    transfer_metadata = Path(base_directory_path) / "objects" / "metadata" / "transfers"
-    if not transfer_metadata.is_dir():
-        return mapping
-    for dir_ in transfer_metadata.iterdir():
-        source_metadata = dir_ / "source-metadata.csv"
-        if not source_metadata.is_file():
+    source_metadata_paths = []
+    metadata_path = Path(base_directory_path) / "objects" / "metadata"
+    transfers_metadata_path = metadata_path / "transfers"
+    if update:
+        source_metadata_paths.append(metadata_path / "source-metadata.csv")
+    elif transfers_metadata_path.is_dir():
+        for dir_ in transfers_metadata_path.iterdir():
+            source_metadata_paths.append(dir_ / "source-metadata.csv")
+    for source_metadata_path in source_metadata_paths:
+        if not source_metadata_path.is_file():
             continue
         try:
-            with source_metadata.open() as f:
+            with source_metadata_path.open() as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if not all(k in row for k in ["filename", "metadata"]):
@@ -305,10 +309,12 @@ def get_xml_metadata_files_mapping(job, base_directory_path):
                     if row["filename"] not in mapping:
                         mapping[row["filename"]] = []
                     mapping[row["filename"]].append(
-                        os.path.join(transfer_metadata, dir_, row["metadata"])
+                        os.path.join(source_metadata_path.parent, row["metadata"])
                     )
         except OSError:
-            job.pyprint("Could not read {}".format(source_metadata), file=sys.stderr)
+            job.pyprint(
+                "Could not read {}".format(source_metadata_path), file=sys.stderr
+            )
             continue
     return mapping
 
@@ -1822,6 +1828,9 @@ def main(
     # If reingesting, do not create a new METS, just modify existing one.
     if "REIN" in sipType:
         job.pyprint("Updating METS during reingest")
+        state.xml_metadata_files_mapping = get_xml_metadata_files_mapping(
+            job, baseDirectoryPath, update=True
+        )
         # don't keep existing normative structmap if creating one
         root = archivematicaCreateMETSReingest.update_mets(
             job,
