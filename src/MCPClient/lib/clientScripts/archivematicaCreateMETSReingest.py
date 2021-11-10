@@ -2,6 +2,7 @@
 import copy
 from lxml import etree
 import os
+import sys
 
 import metsrw
 import scandir
@@ -650,6 +651,48 @@ def _get_old_mets_rel_path(sip_uuid):
     )
 
 
+def update_xml_metadata(job, mets, state):
+    for fsentry in mets.all_files():
+        if fsentry.use != "original" and fsentry.type != "Directory":
+            continue
+        path = fsentry.path
+        if not path:
+            dirs = []
+            fsentry_loop = fsentry
+            while fsentry_loop.parent:
+                dirs.insert(0, fsentry_loop.label)
+                fsentry_loop = fsentry_loop.parent
+            path = os.sep.join(dirs)
+        if path not in state.xml_metadata_files_mapping:
+            continue
+        for xml_path, xml_type in state.xml_metadata_files_mapping[path]:
+            if not xml_path:
+                # TODO: mark existing dmdSec as deleted
+                continue
+            if not xml_path.is_file():
+                continue
+            try:
+                tree = etree.parse(str(xml_path))
+                root = tree.getroot()
+            except etree.LxmlError as err:
+                job.pyprint(
+                    "Could not parse {}\n\t- {}".format(xml_path, err),
+                    file=sys.stderr,
+                )
+                continue
+            valid, errors = createmets2._validate_xml(tree)
+            if not valid:
+                job.pyprint(
+                    "Errors encountered validating {}:".format(xml_path),
+                    file=sys.stderr,
+                )
+                for error in errors:
+                    job.pyprint("\t- {}".format(error), file=sys.stderr)
+                continue
+            # TODO: mark existing dmdSec as superceeded
+            fsentry.add_dmdsec(root, "OTHER", othermdtype=xml_type)
+
+
 def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
 
     old_mets_path = os.path.join(sip_dir, _get_old_mets_rel_path(sip_uuid))
@@ -664,6 +707,7 @@ def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
     add_events(job, mets, sip_uuid)
     add_new_files(job, mets, sip_uuid, sip_dir)
     delete_files(mets, sip_uuid)
+    update_xml_metadata(job, mets, state)
 
     serialized = mets.serialize()
     if not keep_normative_structmap:
