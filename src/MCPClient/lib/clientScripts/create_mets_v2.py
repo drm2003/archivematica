@@ -304,13 +304,13 @@ def get_xml_metadata_files_mapping(job, base_directory_path, update=False):
             with source_metadata_path.open() as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if not all(k in row for k in ["filename", "metadata", "type"]):
+                    if not all(k in row for k in ["filename", "type"]):
                         continue
                     if row["filename"] not in mapping:
                         mapping[row["filename"]] = []
-                    mapping[row["filename"]].append(
-                        (source_metadata_path.parent / row["metadata"], row["type"])
-                    )
+                    if row["metadata"]:
+                        row["metadata"] = source_metadata_path.parent / row["metadata"]
+                    mapping[row["filename"]].append((row["metadata"], row["type"]))
         except OSError:
             job.pyprint(
                 "Could not read {}".format(source_metadata_path), file=sys.stderr
@@ -324,7 +324,7 @@ def create_dmd_sections_from_xml(job, path, state):
     if path not in state.xml_metadata_files_mapping:
         return
     for xml_path, xml_type in state.xml_metadata_files_mapping[path]:
-        if not xml_path.is_file():
+        if not xml_path or not xml_path.is_file():
             continue
         try:
             tree = etree.parse(str(xml_path))
