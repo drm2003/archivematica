@@ -651,7 +651,10 @@ def _get_old_mets_rel_path(sip_uuid):
     )
 
 
-def update_xml_metadata(job, mets, state):
+def update_xml_metadata(job, mets, sip_dir):
+    xml_metadata_files_mapping = createmets2.get_xml_metadata_files_mapping(
+        job, sip_dir, update=True
+    )
     for fsentry in mets.all_files():
         if fsentry.use != "original" and fsentry.type != "Directory":
             continue
@@ -663,9 +666,9 @@ def update_xml_metadata(job, mets, state):
                 dirs.insert(0, fsentry_loop.label)
                 fsentry_loop = fsentry_loop.parent
             path = os.sep.join(dirs)
-        if path not in state.xml_metadata_files_mapping:
+        if path not in xml_metadata_files_mapping:
             continue
-        for xml_path, xml_type in state.xml_metadata_files_mapping[path]:
+        for xml_path, xml_type in xml_metadata_files_mapping[path]:
             if not xml_path:
                 # TODO: mark existing dmdSec as deleted
                 continue
@@ -707,7 +710,7 @@ def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
     add_events(job, mets, sip_uuid)
     add_new_files(job, mets, sip_uuid, sip_dir)
     delete_files(mets, sip_uuid)
-    update_xml_metadata(job, mets, state)
+    update_xml_metadata(job, mets, sip_dir)
 
     serialized = mets.serialize()
     if not keep_normative_structmap:

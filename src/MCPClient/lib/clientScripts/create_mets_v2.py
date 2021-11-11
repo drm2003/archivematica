@@ -1827,9 +1827,6 @@ def main(
     # If reingesting, do not create a new METS, just modify existing one.
     if "REIN" in sipType:
         job.pyprint("Updating METS during reingest")
-        state.xml_metadata_files_mapping = get_xml_metadata_files_mapping(
-            job, baseDirectoryPath, update=True
-        )
         # don't keep existing normative structmap if creating one
         root = archivematicaCreateMETSReingest.update_mets(
             job,
