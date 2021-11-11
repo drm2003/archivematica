@@ -292,6 +292,7 @@ def get_xml_metadata_files_mapping(job, base_directory_path, update=False):
     source_metadata_paths = []
     metadata_path = Path(base_directory_path) / "objects" / "metadata"
     transfers_metadata_path = metadata_path / "transfers"
+    metadata_path = metadata_path / "metadata"  # remove
     if update:
         source_metadata_paths.append(metadata_path / "source-metadata.csv")
     elif transfers_metadata_path.is_dir():

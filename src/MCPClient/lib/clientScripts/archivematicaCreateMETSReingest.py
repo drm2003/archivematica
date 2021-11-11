@@ -701,7 +701,7 @@ def update_xml_metadata(job, mets, sip_dir):
                     job.pyprint("\t- {}".format(error), file=sys.stderr)
                 continue
             dmdsec = fsentry.add_dmdsec(root, "OTHER", othermdtype=xml_type)
-            dmdsec.status="updated"
+            dmdsec.status = "updated"
 
 
 def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
