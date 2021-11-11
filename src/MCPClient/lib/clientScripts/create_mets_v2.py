@@ -346,7 +346,7 @@ def create_dmd_sections_from_xml(job, path, state):
             continue
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
-        dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID)
+        dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID, STATUS="original")
         state.dmdSecs.append(dmd_sec)
         md_wrap = etree.SubElement(dmd_sec, ns.metsBNS + "mdWrap")
         md_wrap.set("MDTYPE", "OTHER")

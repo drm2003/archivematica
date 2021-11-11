@@ -668,9 +668,17 @@ def update_xml_metadata(job, mets, sip_dir):
             path = os.sep.join(dirs)
         if path not in xml_metadata_files_mapping:
             continue
+        dmdsec_mapping = {}
+        for dmdsec in fsentry.dmdsecs:
+            mdwrap = dmdsec.contents
+            othermdtype = getattr(mdwrap, "othermdtype", None)
+            if othermdtype:
+                if othermdtype not in dmdsec_mapping:
+                    dmdsec_mapping[othermdtype] = []
+                dmdsec_mapping[othermdtype].append(dmdsec)
         for xml_path, xml_type in xml_metadata_files_mapping[path]:
-            if not xml_path:
-                # TODO: mark existing dmdSec as deleted
+            if not xml_path and xml_type in dmdsec_mapping:
+                dmdsec_mapping[xml_type][-1].status = "deleted"
                 continue
             if not xml_path.is_file():
                 continue
@@ -692,8 +700,8 @@ def update_xml_metadata(job, mets, sip_dir):
                 for error in errors:
                     job.pyprint("\t- {}".format(error), file=sys.stderr)
                 continue
-            # TODO: mark existing dmdSec as superceeded
-            fsentry.add_dmdsec(root, "OTHER", othermdtype=xml_type)
+            dmdsec = fsentry.add_dmdsec(root, "OTHER", othermdtype=xml_type)
+            dmdsec.status="updated"
 
 
 def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
