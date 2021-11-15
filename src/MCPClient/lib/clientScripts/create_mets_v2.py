@@ -25,6 +25,7 @@
 import collections
 import copy
 import csv
+from datetime import datetime
 from glob import glob
 from itertools import chain
 import lxml.etree as etree
@@ -347,7 +348,12 @@ def create_dmd_sections_from_xml(job, path, state):
             continue
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
-        dmd_sec = etree.Element(ns.metsBNS + "dmdSec", ID=DMDID, STATUS="original")
+        dmd_sec = etree.Element(
+            ns.metsBNS + "dmdSec",
+            ID=DMDID,
+            CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+            STATUS="original",
+        )
         state.dmdSecs.append(dmd_sec)
         md_wrap = etree.SubElement(dmd_sec, ns.metsBNS + "mdWrap")
         md_wrap.set("MDTYPE", "OTHER")
