@@ -966,22 +966,58 @@ def _get_relative_path_element(directory):
     return result
 
 
+def _get_latest_dmd_secs(dmd_id, doc):
+    # Build a mapping of dmdSec by metadata type
+    dmd_secs = {}
+    for id in dmd_id.split():
+        dmd_sec = ns.xml_find_premis(doc, 'mets:dmdSec[@ID="{}"]'.format(id))
+        if not dmd_sec:
+            continue
+        # Use mdWrap OTHERMDTYPE as key if set or fallback to MDTYPE
+        md_wrap = ns.xml_find_premis(dmd_sec, "mets:mdWrap")
+        md_type = md_wrap.attrib.get("OTHERMDTYPE")
+        if not md_type:
+            md_type = md_wrap.attrib.get("MDTYPE")
+        # Ignore PREMIS:OBJECT
+        if not md_type or md_type == "PREMIS:OBJECT":
+            continue
+        if md_type not in dmd_secs:
+            dmd_secs[md_type] = []
+        dmd_secs[md_type].append(dmd_sec)
+    # Get only the latest dmdSec by type
+    final_dmd_secs = []
+    for md_type, secs in dmd_secs.items():
+        latest_date = ""
+        latest_sec = None
+        for sec in secs:
+            date = sec.attrib.get("CREATED", "")
+            if not latest_date or date > latest_date:
+                latest_date = date
+                latest_sec = sec
+        # Do not add latest dmdSec if it's deleted
+        if latest_sec and latest_sec.attrib.get("STATUS", "") != "deleted":
+            final_dmd_secs.append(latest_sec)
+    return final_dmd_secs
+
+
 def _get_file_metadata(file_pointer_division, doc):
     """Get descriptive metadata for a file pointer.
 
-    There are two types of metadata elements extracted: dublin core
-    and custom (non dublin core), both set through the
-    metadata/metadata.csv file.
+    There are various types of metadata elements extracted: dublin core
+    and custom (non dublin core), both set through the metadata/metadata.csv
+    file; and metadata added through the source-metadata.csv files and
+    related XML files.
 
     These types are parsed and combined into a single dictionary of
     metadata attributes.
     """
     result = {}
     elements_with_metadata = []
-    for DMDID in file_pointer_division.attrib.get("DMDID", "").split():
-        dmdSec = ns.xml_find_premis(doc, 'mets:dmdSec[@ID="{}"]'.format(DMDID))
-        if dmdSec is not None:
-            elements_with_metadata += _get_descriptive_section_metadata(dmdSec)
+    dmd_id = file_pointer_division.attrib.get("DMDID")
+    if not dmd_id:
+        return result
+    for dmd_sec in _get_latest_dmd_secs(dmd_id, doc):
+        elements_with_metadata += _get_descriptive_section_metadata(dmd_sec)
     if elements_with_metadata:
         result = _combine_elements(elements_with_metadata)
     return result
@@ -998,6 +1034,8 @@ def _get_directory_metadata(directory, doc):
        file
     3. Bag/disk image metadata, set through the bag-info.txt file or
        the disk image metadata form in the dashboard
+    4. Custom XML metadata, set through the source-metadata.csv files
+       and related XML files
 
     These types are parsed and combined into a single dictionary of
     metadata attributes. A marker element with the label of the
@@ -1005,16 +1043,16 @@ def _get_directory_metadata(directory, doc):
     """
     result = {}
     elements_with_metadata = []
-    for DMDID in directory.attrib.get("DMDID", "").split():
-        dmdSec = ns.xml_find_premis(doc, 'mets:dmdSec[@ID="{}"]'.format(DMDID))
-        if dmdSec is not None:
-            elements_with_metadata += _get_descriptive_section_metadata(dmdSec)
+    dmd_id = directory.attrib.get("DMDID")
+    if dmd_id:
+        for dmd_sec in _get_latest_dmd_secs(dmd_id, doc):
+            elements_with_metadata += _get_descriptive_section_metadata(dmd_sec)
     for ADMID in directory.attrib.get("ADMID", "").split():
-        amdSec = ns.xml_find_premis(doc, 'mets:amdSec[@ID="{}"]'.format(ADMID))
-        if amdSec is not None:
+        amd_sec = ns.xml_find_premis(doc, 'mets:amdSec[@ID="{}"]'.format(ADMID))
+        if amd_sec is not None:
             # look for bag/disk image metadata
             elements_with_metadata += ns.xml_findall_premis(
-                amdSec, "mets:sourceMD/mets:mdWrap/mets:xmlData/transfer_metadata"
+                amd_sec, "mets:sourceMD/mets:mdWrap/mets:xmlData/transfer_metadata"
             )
     if elements_with_metadata:
         # add an attribute with the relative path of the Directory entry
