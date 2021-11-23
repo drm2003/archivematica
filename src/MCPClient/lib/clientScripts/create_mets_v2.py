@@ -42,7 +42,6 @@ import six
 
 django.setup()
 # dashboard
-from django.conf import settings as mcpclient_settings
 from django.utils import timezone
 from main.models import (
     Agent,
@@ -59,7 +58,10 @@ from main.models import (
 
 import archivematicaCreateMETSReingest
 from archivematicaCreateMETSMetadataCSV import parseMetadata
-from archivematicaCreateMETSMetadataXML import get_xml_metadata_files_mapping
+from archivematicaCreateMETSMetadataXML import (
+    get_xml_metadata_files_mapping,
+    validate_xml,
+)
 from archivematicaCreateMETSRights import archivematicaGetRights
 from archivematicaCreateMETSRightsDspaceMDRef import (
     archivematicaCreateMETSRightsDspaceMDRef,
@@ -303,7 +305,7 @@ def create_dmd_sections_from_xml(job, path, state):
                 file=sys.stderr,
             )
             continue
-        valid, errors = _validate_xml(tree)
+        valid, errors = validate_xml(tree)
         if not valid:
             job.pyprint(
                 "Errors encountered validating {}:".format(xml_path),
@@ -328,56 +330,6 @@ def create_dmd_sections_from_xml(job, path, state):
         xml_data.append(root)
         dmd_ids.append(DMDID)
     return " ".join(dmd_ids)
-
-
-def _validate_xml(tree):
-    schema_uri, checked_keys = _get_schema_uri(tree)
-    if not schema_uri:
-        return False, ["Schema not found for keys: {}".format(checked_keys)]
-    schema_type = schema_uri.split(".")[-1]
-    try:
-        if schema_type == "dtd":
-            schema = etree.DTD(schema_uri)
-        elif schema_type == "xsd":
-            schema_contents = etree.parse(schema_uri)
-            schema = etree.XMLSchema(schema_contents)
-        elif schema_type == "rng":
-            schema_contents = etree.parse(schema_uri)
-            schema = etree.RelaxNG(schema_contents)
-        else:
-            return False, ["Unknown schema type: {}".format(schema_type)]
-    except etree.LxmlError as err:
-        return False, ["Could not parse schema file: {}".format(schema_uri), err]
-    if not schema.validate(tree):
-        return False, schema.error_log
-    return True, []
-
-
-def _get_schema_uri(tree):
-    XSI = "http://www.w3.org/2001/XMLSchema-instance"
-    VALIDATION = mcpclient_settings.XML_VALIDATION
-    key = None
-    checked_keys = []
-    schema_location = tree.xpath(
-        "/*/@xsi:noNamespaceSchemaLocation", namespaces={"xsi": XSI}
-    )
-    if schema_location:
-        key = schema_location[0].strip()
-        checked_keys.append(key)
-    if not key or key not in VALIDATION:
-        schema_location = tree.xpath("/*/@xsi:schemaLocation", namespaces={"xsi": XSI})
-        if schema_location:
-            key = schema_location[0].strip().split()[-1]
-            checked_keys.append(key)
-    if not key or key not in VALIDATION:
-        key = tree.xpath("namespace-uri(.)")
-        checked_keys.append(key)
-    if not key or key not in VALIDATION:
-        key = tree.xpath("local-name(.)")
-        checked_keys.append(key)
-    if not key or key not in VALIDATION:
-        return None, checked_keys
-    return VALIDATION[key], checked_keys
 
 
 def createDmdSecsFromCSVParsedMetadata(job, metadata, state):

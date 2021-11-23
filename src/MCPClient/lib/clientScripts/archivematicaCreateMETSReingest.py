@@ -10,7 +10,10 @@ import scandir
 import create_mets_v2 as createmets2
 import archivematicaCreateMETSRights as createmetsrights
 import archivematicaCreateMETSMetadataCSV as createmetscsv
-from archivematicaCreateMETSMetadataXML import get_xml_metadata_files_mapping
+from archivematicaCreateMETSMetadataXML import (
+    get_xml_metadata_files_mapping,
+    validate_xml,
+)
 
 import namespaces as ns
 
@@ -691,7 +694,7 @@ def update_xml_metadata(job, mets, sip_dir):
                     file=sys.stderr,
                 )
                 continue
-            valid, errors = createmets2._validate_xml(tree)
+            valid, errors = validate_xml(tree)
             if not valid:
                 job.pyprint(
                     "Errors encountered validating {}:".format(xml_path),
