@@ -10,6 +10,8 @@ import scandir
 import create_mets_v2 as createmets2
 import archivematicaCreateMETSRights as createmetsrights
 import archivematicaCreateMETSMetadataCSV as createmetscsv
+from archivematicaCreateMETSMetadataXML import get_xml_metadata_files_mapping
+
 import namespaces as ns
 
 # dashboard
@@ -652,9 +654,7 @@ def _get_old_mets_rel_path(sip_uuid):
 
 
 def update_xml_metadata(job, mets, sip_dir):
-    xml_metadata_files_mapping = createmets2.get_xml_metadata_files_mapping(
-        job, sip_dir, update=True
-    )
+    xml_metadata_files_mapping = get_xml_metadata_files_mapping(sip_dir, reingest=True)
     for fsentry in mets.all_files():
         if fsentry.use != "original" and fsentry.type != "Directory":
             continue
@@ -676,7 +676,7 @@ def update_xml_metadata(job, mets, sip_dir):
                 if othermdtype not in dmdsec_mapping:
                     dmdsec_mapping[othermdtype] = []
                 dmdsec_mapping[othermdtype].append(dmdsec)
-        for xml_path, xml_type in xml_metadata_files_mapping[path]:
+        for xml_type, xml_path in xml_metadata_files_mapping[path].items():
             if not xml_path and xml_type in dmdsec_mapping:
                 dmdsec_mapping[xml_type][-1].status = "deleted"
                 continue

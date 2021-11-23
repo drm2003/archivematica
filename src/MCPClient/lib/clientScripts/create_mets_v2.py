@@ -24,14 +24,12 @@
 
 import collections
 import copy
-import csv
 from datetime import datetime
 from glob import glob
 from itertools import chain
 import lxml.etree as etree
 from optparse import OptionParser
 import os
-from pathlib import Path
 import pprint
 import re
 import sys
@@ -61,6 +59,7 @@ from main.models import (
 
 import archivematicaCreateMETSReingest
 from archivematicaCreateMETSMetadataCSV import parseMetadata
+from archivematicaCreateMETSMetadataXML import get_xml_metadata_files_mapping
 from archivematicaCreateMETSRights import archivematicaGetRights
 from archivematicaCreateMETSRightsDspaceMDRef import (
     archivematicaCreateMETSRightsDspaceMDRef,
@@ -288,44 +287,11 @@ def createDMDIDsFromCSVMetadata(job, path, state):
     return " ".join([d.get("ID") for d in dmdsecs])
 
 
-def get_xml_metadata_files_mapping(job, base_directory_path, update=False):
-    mapping = {}
-    source_metadata_paths = []
-    metadata_path = Path(base_directory_path) / "objects" / "metadata"
-    transfers_metadata_path = metadata_path / "transfers"
-    metadata_path = metadata_path / "metadata"  # remove
-    if update:
-        source_metadata_paths.append(metadata_path / "source-metadata.csv")
-    elif transfers_metadata_path.is_dir():
-        for dir_ in transfers_metadata_path.iterdir():
-            source_metadata_paths.append(dir_ / "source-metadata.csv")
-    for source_metadata_path in source_metadata_paths:
-        if not source_metadata_path.is_file():
-            continue
-        try:
-            with source_metadata_path.open() as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if not all(k in row for k in ["filename", "type"]):
-                        continue
-                    if row["filename"] not in mapping:
-                        mapping[row["filename"]] = []
-                    if row["metadata"]:
-                        row["metadata"] = source_metadata_path.parent / row["metadata"]
-                    mapping[row["filename"]].append((row["metadata"], row["type"]))
-        except OSError:
-            job.pyprint(
-                "Could not read {}".format(source_metadata_path), file=sys.stderr
-            )
-            continue
-    return mapping
-
-
 def create_dmd_sections_from_xml(job, path, state):
     dmd_ids = []
     if path not in state.xml_metadata_files_mapping:
         return
-    for xml_path, xml_type in state.xml_metadata_files_mapping[path]:
+    for xml_type, xml_path in state.xml_metadata_files_mapping[path].items():
         if not xml_path or not xml_path.is_file():
             continue
         try:
@@ -1847,9 +1813,7 @@ def main(
         return
 
     state.CSV_METADATA = parseMetadata(job, baseDirectoryPath, state)
-    state.xml_metadata_files_mapping = get_xml_metadata_files_mapping(
-        job, baseDirectoryPath
-    )
+    state.xml_metadata_files_mapping = get_xml_metadata_files_mapping(baseDirectoryPath)
 
     baseDirectoryPath = os.path.join(baseDirectoryPath, "")
     objectsDirectoryPath = os.path.join(baseDirectoryPath, "objects")
