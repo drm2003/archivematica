@@ -30,6 +30,10 @@ django.setup()
 from django.conf import settings as mcpclient_settings
 
 
+class XmlMetadataError(Exception):
+    """Custom error managing XML metadata mappings and validation."""
+
+
 def get_xml_metadata_files_mapping(sip_path, reingest=False):
     """Get a mapping of files/dirs in the SIP and their related XML files.
 
@@ -59,7 +63,7 @@ def get_xml_metadata_files_mapping(sip_path, reingest=False):
     :param str sip_path: Absolute path to the SIP.
     :param bool reingest: Boolean to indicate if it's a reingest.
     :return dict: File/dir path -> dict of type -> metadata file pathlib Path.
-    :raises ValueError: If a CSV row is missing the filename or type, or if
+    :raises XmlMetadataError: If a CSV row is missing the filename or type, or if
     there is more than one entry for the same filename and type.
     """
     mapping = {}
@@ -78,7 +82,7 @@ def get_xml_metadata_files_mapping(sip_path, reingest=False):
             reader = csv.DictReader(f)
             for row in reader:
                 if not all(k in row and row[k] for k in ["filename", "type"]):
-                    raise ValueError(
+                    raise XmlMetadataError(
                         "A row in {} is missing the filename and/or type".format(
                             source_metadata_path
                         )
@@ -86,7 +90,7 @@ def get_xml_metadata_files_mapping(sip_path, reingest=False):
                 if row["filename"] not in mapping:
                     mapping[row["filename"]] = {}
                 elif row["type"] in mapping[row["filename"]]:
-                    raise ValueError(
+                    raise XmlMetadataError(
                         "More than one entry in {} for path {} and type {}".format(
                             source_metadata_path, row["filename"], row["type"]
                         )
