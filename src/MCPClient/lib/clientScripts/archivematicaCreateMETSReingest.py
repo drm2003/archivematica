@@ -2,6 +2,7 @@
 import copy
 from lxml import etree
 import os
+import sys
 
 import metsrw
 import scandir
@@ -10,7 +11,7 @@ import create_mets_v2 as createmets2
 import archivematicaCreateMETSRights as createmetsrights
 import archivematicaCreateMETSMetadataCSV as createmetscsv
 from archivematicaCreateMETSMetadataXML import (
-    get_xml_metadata_files_mapping,
+    get_xml_metadata_mapping,
     validate_xml,
 )
 
@@ -19,6 +20,7 @@ import namespaces as ns
 # dashboard
 from main import models
 
+from django.conf import settings as mcpclient_settings
 from django.utils import six
 
 
@@ -656,7 +658,9 @@ def _get_old_mets_rel_path(sip_uuid):
 
 
 def update_xml_metadata(job, mets, sip_dir):
-    xml_metadata_files_mapping = get_xml_metadata_files_mapping(sip_dir, reingest=True)
+    xml_metadata_mapping, xml_metadata_errors = get_xml_metadata_mapping(
+        sip_dir, reingest=True
+    )
     for fsentry in mets.all_files():
         if fsentry.use != "original" and fsentry.type != "Directory":
             continue
@@ -668,7 +672,7 @@ def update_xml_metadata(job, mets, sip_dir):
                 dirs.insert(0, fsentry_loop.label)
                 fsentry_loop = fsentry_loop.parent
             path = os.sep.join(dirs)
-        if path not in xml_metadata_files_mapping:
+        if path not in xml_metadata_mapping:
             continue
         dmdsec_mapping = {}
         for dmdsec in fsentry.dmdsecs:
@@ -678,14 +682,25 @@ def update_xml_metadata(job, mets, sip_dir):
                 if othermdtype not in dmdsec_mapping:
                     dmdsec_mapping[othermdtype] = []
                 dmdsec_mapping[othermdtype].append(dmdsec)
-        for xml_type, xml_path in xml_metadata_files_mapping[path].items():
+        for xml_type, xml_path in xml_metadata_mapping[path].items():
             if not xml_path and xml_type in dmdsec_mapping:
                 dmdsec_mapping[xml_type][-1].status = "deleted"
                 continue
             tree = etree.parse(str(xml_path))
-            validate_xml(tree)
+            xml_metadata_errors += validate_xml(tree)
             dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
             dmdsec.status = "updated"
+    if len(xml_metadata_errors):
+        job.pyprint(
+            "Error(s) processing and/or validating XML metadata:\n\t- {}".format(
+                "\n\t- ".join([str(err) for err in xml_metadata_errors])
+            ),
+            file=sys.stderr,
+        )
+        if mcpclient_settings.XML_VALIDATION_FAIL_ON_ERROR:
+            raise Exception(
+                "Error generating AIP METS. See the standard error stream for more details."
+            )
 
 
 def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):

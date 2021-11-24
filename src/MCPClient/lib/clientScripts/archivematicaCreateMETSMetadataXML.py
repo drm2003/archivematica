@@ -23,18 +23,10 @@ import csv
 from lxml import etree
 from pathlib import Path
 
-import django
-
-django.setup()
-
 from django.conf import settings as mcpclient_settings
 
 
-class XmlMetadataError(Exception):
-    """Custom error managing XML metadata mappings and validation."""
-
-
-def get_xml_metadata_files_mapping(sip_path, reingest=False):
+def get_xml_metadata_mapping(sip_path, reingest=False):
     """Get a mapping of files/dirs in the SIP and their related XML files.
 
     On initial ingests, it looks for such mapping in source-metadata.csv
@@ -62,11 +54,12 @@ def get_xml_metadata_files_mapping(sip_path, reingest=False):
 
     :param str sip_path: Absolute path to the SIP.
     :param bool reingest: Boolean to indicate if it's a reingest.
-    :return dict: File/dir path -> dict of type -> metadata file pathlib Path.
-    :raises XmlMetadataError: If a CSV row is missing the filename or type, or if
-    there is more than one entry for the same filename and type.
+    :return dict, list: Dictionary with File/dir path -> dict of type -> metadata
+    file pathlib Path, and list with errors (if a CSV row is missing the filename
+    or type, or if there is more than one entry for the same filename and type).
     """
     mapping = {}
+    errors = []
     source_metadata_paths = []
     metadata_path = Path(sip_path) / "objects" / "metadata"
     transfers_metadata_path = metadata_path / "transfers"
@@ -82,43 +75,50 @@ def get_xml_metadata_files_mapping(sip_path, reingest=False):
             reader = csv.DictReader(f)
             for row in reader:
                 if not all(k in row and row[k] for k in ["filename", "type"]):
-                    raise XmlMetadataError(
+                    errors.append(
                         "A row in {} is missing the filename and/or type".format(
                             source_metadata_path
                         )
                     )
+                    continue
                 if row["filename"] not in mapping:
                     mapping[row["filename"]] = {}
                 elif row["type"] in mapping[row["filename"]]:
-                    raise XmlMetadataError(
+                    errors.append(
                         "More than one entry in {} for path {} and type {}".format(
                             source_metadata_path, row["filename"], row["type"]
                         )
                     )
+                    continue
                 if row["metadata"]:
                     row["metadata"] = source_metadata_path.parent / row["metadata"]
                 mapping[row["filename"]][row["type"]] = row["metadata"]
-    return mapping
+    return mapping, errors
 
 
 def validate_xml(tree):
-    schema_uri = _get_schema_uri(tree)
+    try:
+        schema_uri = _get_schema_uri(tree)
+    except ValueError as err:
+        return [err]
     if not schema_uri:
-        return
+        return []
     schema_type = schema_uri.split(".")[-1]
-    if schema_type == "dtd":
-        schema = etree.DTD(schema_uri)
-    elif schema_type == "xsd":
-        schema_contents = etree.parse(schema_uri)
-        schema = etree.XMLSchema(schema_contents)
-    elif schema_type == "rng":
-        schema_contents = etree.parse(schema_uri)
-        schema = etree.RelaxNG(schema_contents)
-    else:
-        raise XmlMetadataError(
-            "Unknown XML validation schema type: {}".format(schema_type)
-        )
-    schema.assertValid(tree)
+    try:
+        if schema_type == "dtd":
+            schema = etree.DTD(schema_uri)
+        elif schema_type == "xsd":
+            schema_contents = etree.parse(schema_uri)
+            schema = etree.XMLSchema(schema_contents)
+        elif schema_type == "rng":
+            schema_contents = etree.parse(schema_uri)
+            schema = etree.RelaxNG(schema_contents)
+        else:
+            return ["Unknown XML validation schema type: {}".format(schema_type)]
+    except etree.LxmlError as err:
+        return ["Could not parse schema file: {}".format(schema_uri), err]
+    schema.validate(tree)
+    return schema.error_log
 
 
 def _get_schema_uri(tree):
@@ -144,7 +144,7 @@ def _get_schema_uri(tree):
         key = tree.xpath("local-name(.)")
         checked_keys.append(key)
     if not key or key not in VALIDATION:
-        raise XmlMetadataError(
+        raise ValueError(
             "XML validation schema not found for keys: {}".format(checked_keys)
         )
     return VALIDATION[key]

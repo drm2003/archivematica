@@ -372,3 +372,4 @@ XML_VALIDATION = {
     "foo": os.path.join(CLIENT_ASSETS_DIRECTORY, "foo", "foo.rng"),
     "metadata": None,
 }
+XML_VALIDATION_FAIL_ON_ERROR = True

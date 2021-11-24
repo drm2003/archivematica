@@ -42,6 +42,7 @@ import six
 
 django.setup()
 # dashboard
+from django.conf import settings as mcpclient_settings
 from django.utils import timezone
 from main.models import (
     Agent,
@@ -59,7 +60,7 @@ from main.models import (
 import archivematicaCreateMETSReingest
 from archivematicaCreateMETSMetadataCSV import parseMetadata
 from archivematicaCreateMETSMetadataXML import (
-    get_xml_metadata_files_mapping,
+    get_xml_metadata_mapping,
     validate_xml,
 )
 from archivematicaCreateMETSRights import archivematicaGetRights
@@ -291,13 +292,13 @@ def createDMDIDsFromCSVMetadata(job, path, state):
 
 def create_dmd_sections_from_xml(job, path, state):
     dmd_ids = []
-    if path not in state.xml_metadata_files_mapping:
+    if path not in state.xml_metadata_mapping:
         return
-    for xml_type, xml_path in state.xml_metadata_files_mapping[path].items():
+    for xml_type, xml_path in state.xml_metadata_mapping[path].items():
         if not xml_path:
             continue
         tree = etree.parse(str(xml_path))
-        validate_xml(tree)
+        state.xml_metadata_errors += validate_xml(tree)
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
         dmd_sec = etree.Element(
@@ -1749,7 +1750,9 @@ def main(
         return
 
     state.CSV_METADATA = parseMetadata(job, baseDirectoryPath, state)
-    state.xml_metadata_files_mapping = get_xml_metadata_files_mapping(baseDirectoryPath)
+    state.xml_metadata_mapping, state.xml_metadata_errors = get_xml_metadata_mapping(
+        baseDirectoryPath
+    )
 
     baseDirectoryPath = os.path.join(baseDirectoryPath, "")
     objectsDirectoryPath = os.path.join(baseDirectoryPath, "objects")
@@ -1911,6 +1914,16 @@ def main(
 
     tree = etree.ElementTree(root)
     write_mets(tree, XMLFile)
+
+    if len(state.xml_metadata_errors):
+        job.pyprint(
+            "Error(s) processing and/or validating XML metadata:\n\t- {}".format(
+                "\n\t- ".join([str(err) for err in state.xml_metadata_errors])
+            ),
+            file=sys.stderr,
+        )
+        if mcpclient_settings.XML_VALIDATION_FAIL_ON_ERROR:
+            state.error_accumulator.error_count += 1
 
     if state.error_accumulator.error_count:
         raise Exception(
