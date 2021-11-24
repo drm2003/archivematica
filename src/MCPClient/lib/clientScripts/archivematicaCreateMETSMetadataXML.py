@@ -102,26 +102,23 @@ def get_xml_metadata_files_mapping(sip_path, reingest=False):
 
 
 def validate_xml(tree):
-    schema_uri, checked_keys = _get_schema_uri(tree)
+    schema_uri = _get_schema_uri(tree)
     if not schema_uri:
-        return False, ["Schema not found for keys: {}".format(checked_keys)]
+        return
     schema_type = schema_uri.split(".")[-1]
-    try:
-        if schema_type == "dtd":
-            schema = etree.DTD(schema_uri)
-        elif schema_type == "xsd":
-            schema_contents = etree.parse(schema_uri)
-            schema = etree.XMLSchema(schema_contents)
-        elif schema_type == "rng":
-            schema_contents = etree.parse(schema_uri)
-            schema = etree.RelaxNG(schema_contents)
-        else:
-            return False, ["Unknown schema type: {}".format(schema_type)]
-    except etree.LxmlError as err:
-        return False, ["Could not parse schema file: {}".format(schema_uri), err]
-    if not schema.validate(tree):
-        return False, schema.error_log
-    return True, []
+    if schema_type == "dtd":
+        schema = etree.DTD(schema_uri)
+    elif schema_type == "xsd":
+        schema_contents = etree.parse(schema_uri)
+        schema = etree.XMLSchema(schema_contents)
+    elif schema_type == "rng":
+        schema_contents = etree.parse(schema_uri)
+        schema = etree.RelaxNG(schema_contents)
+    else:
+        raise XmlMetadataError(
+            "Unknown XML validation schema type: {}".format(schema_type)
+        )
+    schema.assertValid(tree)
 
 
 def _get_schema_uri(tree):
@@ -147,5 +144,7 @@ def _get_schema_uri(tree):
         key = tree.xpath("local-name(.)")
         checked_keys.append(key)
     if not key or key not in VALIDATION:
-        return None, checked_keys
-    return VALIDATION[key], checked_keys
+        raise XmlMetadataError(
+            "XML validation schema not found for keys: {}".format(checked_keys)
+        )
+    return VALIDATION[key]

@@ -2,7 +2,6 @@
 import copy
 from lxml import etree
 import os
-import sys
 
 import metsrw
 import scandir
@@ -683,27 +682,9 @@ def update_xml_metadata(job, mets, sip_dir):
             if not xml_path and xml_type in dmdsec_mapping:
                 dmdsec_mapping[xml_type][-1].status = "deleted"
                 continue
-            if not xml_path.is_file():
-                continue
-            try:
-                tree = etree.parse(str(xml_path))
-                root = tree.getroot()
-            except etree.LxmlError as err:
-                job.pyprint(
-                    "Could not parse {}\n\t- {}".format(xml_path, err),
-                    file=sys.stderr,
-                )
-                continue
-            valid, errors = validate_xml(tree)
-            if not valid:
-                job.pyprint(
-                    "Errors encountered validating {}:".format(xml_path),
-                    file=sys.stderr,
-                )
-                for error in errors:
-                    job.pyprint("\t- {}".format(error), file=sys.stderr)
-                continue
-            dmdsec = fsentry.add_dmdsec(root, "OTHER", othermdtype=xml_type)
+            tree = etree.parse(str(xml_path))
+            validate_xml(tree)
+            dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
             dmdsec.status = "updated"
 
 

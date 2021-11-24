@@ -294,26 +294,10 @@ def create_dmd_sections_from_xml(job, path, state):
     if path not in state.xml_metadata_files_mapping:
         return
     for xml_type, xml_path in state.xml_metadata_files_mapping[path].items():
-        if not xml_path or not xml_path.is_file():
+        if not xml_path:
             continue
-        try:
-            tree = etree.parse(str(xml_path))
-            root = tree.getroot()
-        except etree.LxmlError as err:
-            job.pyprint(
-                "Could not parse {}\n\t- {}".format(xml_path, err),
-                file=sys.stderr,
-            )
-            continue
-        valid, errors = validate_xml(tree)
-        if not valid:
-            job.pyprint(
-                "Errors encountered validating {}:".format(xml_path),
-                file=sys.stderr,
-            )
-            for error in errors:
-                job.pyprint("\t- {}".format(error), file=sys.stderr)
-            continue
+        tree = etree.parse(str(xml_path))
+        validate_xml(tree)
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
         dmd_sec = etree.Element(
@@ -327,7 +311,7 @@ def create_dmd_sections_from_xml(job, path, state):
         md_wrap.set("MDTYPE", "OTHER")
         md_wrap.set("OTHERMDTYPE", xml_type)
         xml_data = etree.SubElement(md_wrap, ns.metsBNS + "xmlData")
-        xml_data.append(root)
+        xml_data.append(tree.getroot())
         dmd_ids.append(DMDID)
     return " ".join(dmd_ids)
 
