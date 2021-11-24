@@ -684,12 +684,21 @@ def update_xml_metadata(job, mets, sip_dir):
                 dmdsec_mapping[othermdtype].append(dmdsec)
         for xml_type, xml_path in xml_metadata_mapping[path].items():
             if not xml_path and xml_type in dmdsec_mapping:
+                # TODO: check CREATED attributes to get the latest dmdSec
                 dmdsec_mapping[xml_type][-1].status = "deleted"
                 continue
             tree = etree.parse(str(xml_path))
             xml_metadata_errors += validate_xml(tree)
             dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
-            dmdsec.status = "updated"
+            dmdsec.status = "update"
+            if xml_type in dmdsec_mapping:
+                for previous_dmdsec in dmdsec_mapping[xml_type]:
+                    status = previous_dmdsec.status
+                    # TODO: check why status is None in some cases where it shouldn't
+                    if not status:
+                        status = "original"
+                    if not status.endswith("-superseded"):
+                        previous_dmdsec.status = status + "-superseded"
     if len(xml_metadata_errors):
         job.pyprint(
             "Error(s) processing and/or validating XML metadata:\n\t- {}".format(
