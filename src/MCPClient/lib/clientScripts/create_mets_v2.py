@@ -298,7 +298,10 @@ def create_dmd_sections_from_xml(job, path, state):
         if not xml_path:
             continue
         tree = etree.parse(str(xml_path))
-        state.xml_metadata_errors += validate_xml(tree)
+        errors = validate_xml(tree)
+        if len(errors):
+            state.xml_metadata_errors += errors
+            continue
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
         dmd_sec = etree.Element(

@@ -686,7 +686,10 @@ def update_xml_metadata(job, mets, sip_dir):
                 dmdsec_mapping[xml_type][-1].status = "deleted"
                 continue
             tree = etree.parse(str(xml_path))
-            xml_metadata_errors += validate_xml(tree)
+            errors = validate_xml(tree)
+            if len(errors):
+                xml_metadata_errors += errors
+                continue
             dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
             dmdsec.status = "update"
             if xml_type in dmdsec_mapping:
