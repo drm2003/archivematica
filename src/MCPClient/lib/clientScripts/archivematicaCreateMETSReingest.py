@@ -682,8 +682,14 @@ def update_xml_metadata(job, mets, sip_dir):
                 dmdsec_mapping[othermdtype].append(dmdsec)
         for xml_type, xml_path in xml_metadata_mapping[path].items():
             if not xml_path and xml_type in dmdsec_mapping:
-                # TODO: check CREATED attributes to get the latest dmdSec
-                dmdsec_mapping[xml_type][-1].status = "deleted"
+                latest_date = ""
+                latest_sec = None
+                for sec in dmdsec_mapping[xml_type]:
+                    date = getattr(sec, "created", "")
+                    if not latest_date or date > latest_date:
+                        latest_date = date
+                        latest_sec = sec
+                latest_sec.status = "deleted"
                 continue
             tree = etree.parse(str(xml_path))
             valid, errors = validate_xml(tree)
