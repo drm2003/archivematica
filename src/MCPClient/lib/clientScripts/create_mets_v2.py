@@ -298,8 +298,8 @@ def create_dmd_sections_from_xml(job, path, state):
         if not xml_path:
             continue
         tree = etree.parse(str(xml_path))
-        errors = validate_xml(tree)
-        if len(errors):
+        valid, errors = validate_xml(tree)
+        if not valid:
             state.xml_metadata_errors += errors
             continue
         state.globalDmdSecCounter += 1

@@ -100,9 +100,9 @@ def validate_xml(tree):
     try:
         schema_uri = _get_schema_uri(tree)
     except ValueError as err:
-        return [err]
+        return False, [err]
     if not schema_uri:
-        return []
+        return True, []
     schema_type = schema_uri.split(".")[-1]
     try:
         if schema_type == "dtd":
@@ -114,11 +114,12 @@ def validate_xml(tree):
             schema_contents = etree.parse(schema_uri)
             schema = etree.RelaxNG(schema_contents)
         else:
-            return ["Unknown XML validation schema type: {}".format(schema_type)]
+            return False, ["Unknown XML validation schema type: {}".format(schema_type)]
     except etree.LxmlError as err:
-        return ["Could not parse schema file: {}".format(schema_uri), err]
-    schema.validate(tree)
-    return schema.error_log
+        return False, ["Could not parse schema file: {}".format(schema_uri), err]
+    if not schema.validate(tree):
+        return False, schema.error_log
+    return True, []
 
 
 def _get_schema_uri(tree):
