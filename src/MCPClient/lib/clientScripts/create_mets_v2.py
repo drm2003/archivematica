@@ -1902,13 +1902,11 @@ def main(
         if arranged_structmap is not None:
             root.append(arranged_structmap)
 
-        printSectionCounters = True
-        if printSectionCounters:
-            job.pyprint("DmdSecs:", state.globalDmdSecCounter)
-            job.pyprint("AmdSecs:", state.globalAmdSecCounter)
-            job.pyprint("TechMDs:", state.globalTechMDCounter)
-            job.pyprint("RightsMDs:", state.globalRightsMDCounter)
-            job.pyprint("DigiprovMDs:", state.globalDigiprovMDCounter)
+        job.pyprint("DmdSecs:", state.globalDmdSecCounter)
+        job.pyprint("AmdSecs:", state.globalAmdSecCounter)
+        job.pyprint("TechMDs:", state.globalTechMDCounter)
+        job.pyprint("RightsMDs:", state.globalRightsMDCounter)
+        job.pyprint("DigiprovMDs:", state.globalDigiprovMDCounter)
 
     tree = etree.ElementTree(root)
     write_mets(tree, XMLFile)
