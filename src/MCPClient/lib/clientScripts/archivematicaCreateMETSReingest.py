@@ -2,7 +2,6 @@
 import copy
 from lxml import etree
 import os
-import sys
 
 import metsrw
 import scandir
@@ -20,7 +19,6 @@ import namespaces as ns
 # dashboard
 from main import models
 
-from django.conf import settings as mcpclient_settings
 from django.utils import six
 
 
@@ -699,17 +697,7 @@ def update_xml_metadata(job, mets, sip_dir):
                         status = "original"
                     if not status.endswith("-superseded"):
                         previous_dmdsec.status = status + "-superseded"
-    if len(xml_metadata_errors):
-        job.pyprint(
-            "Error(s) processing and/or validating XML metadata:\n\t- {}".format(
-                "\n\t- ".join([str(err) for err in xml_metadata_errors])
-            ),
-            file=sys.stderr,
-        )
-        if mcpclient_settings.XML_VALIDATION_FAIL_ON_ERROR:
-            raise Exception(
-                "Error generating AIP METS. See the standard error stream for more details."
-            )
+    return xml_metadata_errors
 
 
 def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
@@ -726,7 +714,7 @@ def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
     add_events(job, mets, sip_uuid)
     add_new_files(job, mets, sip_uuid, sip_dir)
     delete_files(mets, sip_uuid)
-    update_xml_metadata(job, mets, sip_dir)
+    xml_metadata_errors = update_xml_metadata(job, mets, sip_dir)
 
     serialized = mets.serialize()
     if not keep_normative_structmap:
@@ -738,4 +726,4 @@ def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
         for structmap in structmaps:
             structmap.getparent().remove(structmap)
             job.pyprint("Removed normative structMap")
-    return serialized
+    return serialized, xml_metadata_errors
