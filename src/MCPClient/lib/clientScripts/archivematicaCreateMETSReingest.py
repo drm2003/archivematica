@@ -2,6 +2,7 @@
 import copy
 from lxml import etree
 import os
+from uuid import uuid4
 
 import metsrw
 import scandir
@@ -699,7 +700,12 @@ def update_xml_metadata(job, mets, sip_dir):
             dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
             dmdsec.status = "update"
             if xml_type in dmdsec_mapping:
+                group_id = getattr(dmdsec_mapping[xml_type][0], "group_id", "")
+                if not group_id:
+                    group_id = str(uuid4())
+                dmdsec.group_id = group_id
                 for previous_dmdsec in dmdsec_mapping[xml_type]:
+                    previous_dmdsec.group_id = group_id
                     status = previous_dmdsec.status
                     # TODO: check why status is None in some cases where it shouldn't
                     if not status:
