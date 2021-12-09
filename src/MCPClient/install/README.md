@@ -384,7 +384,7 @@ These variables specify how XML files contained in the `metadata` directory of a
 
 - **`METADATA_XML_VALIDATION_SETTINGS_FILE`**:
     - **Description:** Path to a Python module containing the following Django settings:
-        - `XML_VALIDATION`: a dictionary which keys are strings that contain either an [XML schema location](https://www.w3.org/TR/xmlschema-1/#xsi_schemaLocation), an [XML namespace](https://www.w3.org/TR/xml-names/#sec-namespaces) or an XML element tag, and which values are either strings that contain a local path or an external URL to an XML schema file, or `None` to indicate that no validation should be performed.
+        - `XML_VALIDATION`: a dictionary which keys are strings that contain either an [XML schema location](https://www.w3.org/TR/xmlschema-1/#xsi_schemaLocation), an [XML namespace](https://www.w3.org/TR/xml-names/#sec-namespaces) or an XML element tag, and which values are either strings that contain an absolute local path or an external URL to an XML schema file, or `None` to indicate that no validation should be performed.
         - `XML_VALIDATION_FAIL_ON_ERROR`: a boolean that indicates if the SIP ingest workflow should stop on validation errors. Defaults to `False`.
 
       An `ImproperlyConfigured` exception will be raised if the Python module cannot be imported.
