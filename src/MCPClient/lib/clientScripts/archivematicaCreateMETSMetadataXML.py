@@ -22,6 +22,8 @@
 import csv
 from lxml import etree
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from django.conf import settings as mcpclient_settings
 
@@ -104,17 +106,29 @@ def validate_xml(tree):
     if not schema_uri:
         return True, []
     schema_type = schema_uri.split(".")[-1]
+    parse_result = urlparse(schema_uri)
+    if not parse_result.scheme and schema_uri == parse_result.path:
+        # URI is a local file
+        try:
+            schema_uri = Path(schema_uri).as_uri()
+        except ValueError:
+            return False, [
+                "XML schema local path {} must be absolute".format(schema_uri)
+            ]
     try:
-        if schema_type == "dtd":
-            schema = etree.DTD(schema_uri)
-        elif schema_type == "xsd":
-            schema_contents = etree.parse(schema_uri)
-            schema = etree.XMLSchema(schema_contents)
-        elif schema_type == "rng":
-            schema_contents = etree.parse(schema_uri)
-            schema = etree.RelaxNG(schema_contents)
-        else:
-            return False, ["Unknown XML validation schema type: {}".format(schema_type)]
+        with urlopen(schema_uri) as f:
+            if schema_type == "dtd":
+                schema = etree.DTD(f)
+            elif schema_type == "xsd":
+                schema_contents = etree.parse(f)
+                schema = etree.XMLSchema(schema_contents)
+            elif schema_type == "rng":
+                schema_contents = etree.parse(f)
+                schema = etree.RelaxNG(schema_contents)
+            else:
+                return False, [
+                    "Unknown XML validation schema type: {}".format(schema_type)
+                ]
     except etree.LxmlError as err:
         return False, ["Could not parse schema file: {}".format(schema_uri), err]
     if not schema.validate(tree):
