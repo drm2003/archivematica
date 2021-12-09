@@ -20,10 +20,24 @@ import logging
 import logging.config
 import os
 
-from six import StringIO
+from django.core.exceptions import ImproperlyConfigured
+import six
+
 
 from appconfig import Config, process_search_enabled
 import email_settings
+
+
+def _get_settings_from_file(path):
+    try:
+        result = {}
+        with open(path, "rb") as f:
+            code = compile(f.read(), path, "exec")
+            six.exec_(code, result, result)
+        return result
+    except Exception as err:
+        raise ImproperlyConfigured("{} could not be imported: {}".format(path, err))
+
 
 CONFIG_MAPPING = {
     # [MCPClient]
@@ -127,6 +141,11 @@ CONFIG_MAPPING = {
         "option": "prometheus_bind_port",
         "type": "string",
     },
+    "metadata_xml_validation_enabled": {
+        "section": "MCPClient",
+        "option": "metadata_xml_validation_enabled",
+        "type": "boolean",
+    },
     "time_zone": {"section": "MCPClient", "option": "time_zone", "type": "string"},
     # [antivirus]
     "clamav_server": {
@@ -183,6 +202,7 @@ clientAssetsDirectory = /usr/lib/archivematica/MCPClient/assets/
 elasticsearchServer = localhost:9200
 elasticsearchTimeout = 10
 search_enabled = true
+metadata_xml_validation_enabled = false
 index_aip_continue_on_error = false
 capture_client_script_output = true
 temp_dir = /var/archivematica/sharedDirectory/tmp
@@ -227,7 +247,7 @@ timeout = 300
 """
 
 config = Config(env_prefix="ARCHIVEMATICA_MCPCLIENT", attrs=CONFIG_MAPPING)
-config.read_defaults(StringIO(CONFIG_DEFAULTS))
+config.read_defaults(six.StringIO(CONFIG_DEFAULTS))
 config.read_files(
     [
         "/etc/archivematica/archivematicaCommon/dbsettings",
@@ -350,26 +370,11 @@ TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates"}]
 # Apply email settings
 globals().update(email_settings.get_settings(config))
 
-# XML metadata validation:
-# - Use schema location, namespace or tag as key.
-# - Use local path or external URL or None for the schema file as value.
-# - The process looks for the schema location in the root element attributes:
-#   - `xsi:noNamespaceSchemaLocation`.
-#   - `xsi:schemaLocation` (removes the namespace when present).
-# - If no schema is defined, the root element namespace is used as the key.
-# - If no namespace is used, the root element tag name is used as the key.
-# - Allows DTD, XSD and RELAX NG schema types (.dtd, .xsd, .rng).
-# - When set to None, the XML content is added to the METS without validation.
-XML_VALIDATION = {
-    "http://www.loc.gov/standards/mods/v3/mods-3-5.xsd": os.path.join(
-        CLIENT_ASSETS_DIRECTORY, "mods", "mods-3-5.xsd"
-    ),
-    "http://www.loc.gov/standards/mods/v3/mods-3-7.xsd": "http://www.loc.gov/standards/mods/v3/mods-3-7.xsd",
-    "http://www.lido-schema.org": os.path.join(
-        CLIENT_ASSETS_DIRECTORY, "lido", "lido-v1.0.xsd"
-    ),
-    "ead": "http://lcweb2.loc.gov/xmlcommon/dtds/ead2002/ead.dtd",
-    "foo": os.path.join(CLIENT_ASSETS_DIRECTORY, "foo", "foo.rng"),
-    "metadata": None,
-}
-XML_VALIDATION_FAIL_ON_ERROR = True
+METADATA_XML_VALIDATION_ENABLED = config.get("metadata_xml_validation_enabled")
+if METADATA_XML_VALIDATION_ENABLED:
+
+    METADATA_XML_VALIDATION_SETTINGS_FILE = os.environ.get(
+        "METADATA_XML_VALIDATION_SETTINGS_FILE", ""
+    )
+    if METADATA_XML_VALIDATION_SETTINGS_FILE:
+        globals().update(_get_settings_from_file(METADATA_XML_VALIDATION_SETTINGS_FILE))
