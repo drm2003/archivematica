@@ -60,6 +60,7 @@ from main.models import (
 import archivematicaCreateMETSReingest
 from archivematicaCreateMETSMetadataCSV import parseMetadata
 from archivematicaCreateMETSMetadataXML import (
+    get_schema_uri,
     get_xml_metadata_mapping,
     validate_xml,
 )
@@ -82,6 +83,7 @@ from create_mets_dataverse_v2 import (
     create_dataverse_tabfile_dmdsec,
 )
 from custom_handlers import get_script_logger
+from databaseFunctions import insertIntoEvents
 import namespaces as ns
 from change_names import change_name
 
@@ -298,7 +300,28 @@ def create_dmd_sections_from_xml(job, path, state):
         if not xml_path:
             continue
         tree = etree.parse(str(xml_path))
-        valid, errors = validate_xml(tree)
+        try:
+            schema_uri = get_schema_uri(tree)
+        except ValueError as err:
+            state.xml_metadata_errors.append(err)
+            continue
+        if not schema_uri:
+            continue
+        valid, errors = validate_xml(tree, schema_uri)
+        # Store validation data to add it later as a PREMIS event related
+        # to the metadata file.
+        state.xml_metadata_events[xml_path] = {
+            "eventType": "validation",
+            "eventDetail": 'type="metadata"; validation-source-type="'
+            + schema_uri.split(".")[-1]
+            + '"; validation-source="'
+            + schema_uri
+            + '"; program="lxml"; version="'
+            + etree.__version__
+            + '"',
+            "eventOutcome": "pass" if valid else "fail",
+            "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
+        }
         if not valid:
             state.xml_metadata_errors += errors
             continue
@@ -318,6 +341,41 @@ def create_dmd_sections_from_xml(job, path, state):
         xml_data.append(tree.getroot())
         dmd_ids.append(DMDID)
     return " ".join(dmd_ids)
+
+
+def append_xml_metadata_events(job, root, state, sip_path, sip_uuid):
+    for metadata_file_abs_path, event_data in state.xml_metadata_events.items():
+        metadata_file_rel_path = metadata_file_abs_path.relative_to(sip_path)
+        try:
+            file_object = File.objects.get(
+                sip_id=sip_uuid,
+                currentlocation="%SIPDirectory%{}".format(metadata_file_rel_path),
+            )
+        except File.DoesNotExist:
+            state.xml_metadata_errors.append(
+                "No uuid for file: {}".format(metadata_file_rel_path)
+            )
+            continue
+        event_object = insertIntoEvents(file_object.uuid, **event_data)
+        amd_id = ns.xml_find_premis(
+            root,
+            './/mets:FLocat[@xlink:href="{}"]/..'.format(metadata_file_rel_path),
+        ).attrib["ADMID"]
+        amd_sec = ns.xml_find_premis(
+            root,
+            './/mets:amdSec[@ID="{}"]'.format(amd_id),
+        )
+        state.globalDigiprovMDCounter += 1
+        digiprovMD = etree.SubElement(
+            amd_sec,
+            ns.metsBNS + "digiprovMD",
+            ID="digiprovMD_" + str(state.globalDigiprovMDCounter),
+        )
+        mdWrap = etree.SubElement(
+            digiprovMD, ns.metsBNS + "mdWrap", MDTYPE="PREMIS:EVENT"
+        )
+        xmlData = etree.SubElement(mdWrap, ns.metsBNS + "xmlData")
+        xmlData.append(createEvent(event_object))
 
 
 def createDmdSecsFromCSVParsedMetadata(job, metadata, state):
@@ -1754,6 +1812,7 @@ def main(
             state.xml_metadata_mapping,
             state.xml_metadata_errors,
         ) = get_xml_metadata_mapping(baseDirectoryPath)
+        state.xml_metadata_events = {}
 
         baseDirectoryPath = os.path.join(baseDirectoryPath, "")
         objectsDirectoryPath = os.path.join(baseDirectoryPath, "objects")
@@ -1904,6 +1963,8 @@ def main(
         arranged_structmap = build_arranged_structmap(job, structMap, sipUUID)
         if arranged_structmap is not None:
             root.append(arranged_structmap)
+
+        append_xml_metadata_events(job, root, state, baseDirectoryPath, sipUUID)
 
         job.pyprint("DmdSecs:", state.globalDmdSecCounter)
         job.pyprint("AmdSecs:", state.globalAmdSecCounter)

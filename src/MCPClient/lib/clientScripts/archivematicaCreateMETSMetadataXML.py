@@ -98,13 +98,7 @@ def get_xml_metadata_mapping(sip_path, reingest=False):
     return mapping, errors
 
 
-def validate_xml(tree):
-    try:
-        schema_uri = _get_schema_uri(tree)
-    except ValueError as err:
-        return False, [err]
-    if not schema_uri:
-        return True, []
+def validate_xml(tree, schema_uri):
     schema_type = schema_uri.split(".")[-1]
     parse_result = urlparse(schema_uri)
     if not parse_result.scheme and schema_uri == parse_result.path:
@@ -136,7 +130,7 @@ def validate_xml(tree):
     return True, []
 
 
-def _get_schema_uri(tree):
+def get_schema_uri(tree):
     XSI = "http://www.w3.org/2001/XMLSchema-instance"
     VALIDATION = mcpclient_settings.XML_VALIDATION
     key = None

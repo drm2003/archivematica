@@ -11,10 +11,12 @@ import create_mets_v2 as createmets2
 import archivematicaCreateMETSRights as createmetsrights
 import archivematicaCreateMETSMetadataCSV as createmetscsv
 from archivematicaCreateMETSMetadataXML import (
+    get_schema_uri,
     get_xml_metadata_mapping,
     validate_xml,
 )
 
+from databaseFunctions import insertIntoEvents
 import namespaces as ns
 
 # dashboard
@@ -656,7 +658,7 @@ def _get_old_mets_rel_path(sip_uuid):
     )
 
 
-def update_xml_metadata(job, mets, sip_dir):
+def update_xml_metadata(job, mets, sip_dir, sip_uuid):
     xml_metadata_mapping, xml_metadata_errors = get_xml_metadata_mapping(
         sip_dir, reingest=True
     )
@@ -693,7 +695,38 @@ def update_xml_metadata(job, mets, sip_dir):
                 latest_sec.status = "deleted"
                 continue
             tree = etree.parse(str(xml_path))
-            valid, errors = validate_xml(tree)
+            try:
+                schema_uri = get_schema_uri(tree)
+            except ValueError as err:
+                xml_metadata_errors.append(err)
+                continue
+            if not schema_uri:
+                continue
+            valid, errors = validate_xml(tree, schema_uri)
+            event_data = {
+                "eventType": "validation",
+                "eventDetail": 'type="metadata"; validation-source-type="'
+                + schema_uri.split(".")[-1]
+                + '"; validation-source="'
+                + schema_uri
+                + '"; program="lxml"; version="'
+                + etree.__version__
+                + '"',
+                "eventOutcome": "pass" if valid else "fail",
+                "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
+            }
+            xml_rel_path = xml_path.relative_to(sip_dir)
+            try:
+                file_object = models.File.objects.get(
+                    sip_id=sip_uuid,
+                    currentlocation="%SIPDirectory%{}".format(xml_rel_path),
+                )
+            except models.File.DoesNotExist:
+                xml_metadata_errors.append("No uuid for file: {}".format(xml_rel_path))
+                continue
+            event_object = insertIntoEvents(file_object.uuid, **event_data)
+            metadata_fsentry = mets.get_file(file_uuid=file_object.uuid)
+            metadata_fsentry.add_premis_event(createmets2.createEvent(event_object))
             if not valid:
                 xml_metadata_errors += errors
                 continue
@@ -729,7 +762,7 @@ def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
     add_events(job, mets, sip_uuid)
     add_new_files(job, mets, sip_uuid, sip_dir)
     delete_files(mets, sip_uuid)
-    xml_metadata_errors = update_xml_metadata(job, mets, sip_dir)
+    xml_metadata_errors = update_xml_metadata(job, mets, sip_dir, sip_uuid)
 
     serialized = mets.serialize()
     if not keep_normative_structmap:
