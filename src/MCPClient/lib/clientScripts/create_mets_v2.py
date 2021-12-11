@@ -305,26 +305,25 @@ def create_dmd_sections_from_xml(job, path, state):
         except ValueError as err:
             state.xml_metadata_errors.append(err)
             continue
-        if not schema_uri:
-            continue
-        valid, errors = validate_xml(tree, schema_uri)
-        # Store validation data to add it later as a PREMIS event related
-        # to the metadata file.
-        state.xml_metadata_events[xml_path] = {
-            "eventType": "validation",
-            "eventDetail": 'type="metadata"; validation-source-type="'
-            + schema_uri.split(".")[-1]
-            + '"; validation-source="'
-            + schema_uri
-            + '"; program="lxml"; version="'
-            + etree.__version__
-            + '"',
-            "eventOutcome": "pass" if valid else "fail",
-            "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
-        }
-        if not valid:
-            state.xml_metadata_errors += errors
-            continue
+        if schema_uri:
+            valid, errors = validate_xml(tree, schema_uri)
+            # Store validation data to add it later as a PREMIS event related
+            # to the metadata file.
+            state.xml_metadata_events[xml_path] = {
+                "eventType": "validation",
+                "eventDetail": 'type="metadata"; validation-source-type="'
+                + schema_uri.split(".")[-1]
+                + '"; validation-source="'
+                + schema_uri
+                + '"; program="lxml"; version="'
+                + etree.__version__
+                + '"',
+                "eventOutcome": "pass" if valid else "fail",
+                "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
+            }
+            if not valid:
+                state.xml_metadata_errors += errors
+                continue
         state.globalDmdSecCounter += 1
         DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
         dmd_sec = etree.Element(
