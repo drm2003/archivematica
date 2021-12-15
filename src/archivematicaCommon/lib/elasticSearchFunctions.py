@@ -372,7 +372,6 @@ def _get_index_settings():
     return {
         "index": {
             "mapping": {
-                "ignore_malformed": True,
                 "total_fields": {"limit": TOTAL_FIELDS_LIMIT},
                 "depth": {"limit": DEPTH_LIMIT},
             },
@@ -1020,7 +1019,7 @@ def _get_file_metadata(file_pointer_division, doc):
         elements_with_metadata += _get_descriptive_section_metadata(dmd_sec)
     if elements_with_metadata:
         result = _combine_elements(elements_with_metadata)
-    return result
+    return _normalize_dict(result)
 
 
 def _get_directory_metadata(directory, doc):
@@ -1058,7 +1057,7 @@ def _get_directory_metadata(directory, doc):
         # add an attribute with the relative path of the Directory entry
         elements_with_metadata.append(_get_relative_path_element(directory))
         result = _combine_elements(elements_with_metadata)
-    return result
+    return _normalize_dict(result)
 
 
 def _get_aip_metadata(doc):
