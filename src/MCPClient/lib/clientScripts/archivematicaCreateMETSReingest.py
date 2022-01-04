@@ -517,7 +517,7 @@ def add_new_files(job, mets, sip_uuid, sip_dir):
             file_uuid=f.uuid,
             derived_from=derived_from,
         )
-        metsrw_amdsec = metsrw.AMDSec(tree=amdsec, section_id=amdid)
+        metsrw_amdsec = metsrw.AMDSec.parse(amdsec)
         entry.amdsecs.append(metsrw_amdsec)
         parent_fsentry.add_child(entry)
 
