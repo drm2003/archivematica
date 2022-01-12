@@ -974,6 +974,8 @@ def _get_latest_dmd_secs(dmd_id, doc):
             continue
         # Use mdWrap OTHERMDTYPE as key if set or fallback to MDTYPE
         md_wrap = ns.xml_find_premis(dmd_sec, "mets:mdWrap")
+        if not md_wrap:
+            continue
         md_type = md_wrap.attrib.get("OTHERMDTYPE")
         if not md_type:
             md_type = md_wrap.attrib.get("MDTYPE")
