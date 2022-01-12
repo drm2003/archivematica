@@ -15,10 +15,12 @@
 # You should have received a copy of the GNU General Public License
 # along with Archivematica.  If not, see <http://www.gnu.org/licenses/>.
 
+import importlib.util
 import json
 import logging
 import logging.config
 import os
+from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 import six
@@ -29,14 +31,17 @@ import email_settings
 
 
 def _get_settings_from_file(path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
     try:
-        result = {}
-        with open(path, "rb") as f:
-            code = compile(f.read(), path, "exec")
-            six.exec_(code, result, result)
-        return result
+        spec.loader.exec_module(module)
     except Exception as err:
         raise ImproperlyConfigured("{} could not be imported: {}".format(path, err))
+    if hasattr(module, "__all__"):
+        attrs = module.__all__
+    else:
+        attrs = [attr for attr in dir(module) if not attr.startswith("_")]
+    return {attr: getattr(module, attr) for attr in attrs}
 
 
 CONFIG_MAPPING = {
@@ -377,4 +382,6 @@ if METADATA_XML_VALIDATION_ENABLED:
         "METADATA_XML_VALIDATION_SETTINGS_FILE", ""
     )
     if METADATA_XML_VALIDATION_SETTINGS_FILE:
-        globals().update(_get_settings_from_file(METADATA_XML_VALIDATION_SETTINGS_FILE))
+        globals().update(
+            _get_settings_from_file(Path(METADATA_XML_VALIDATION_SETTINGS_FILE))
+        )
