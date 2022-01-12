@@ -22,6 +22,7 @@ import namespaces as ns
 # dashboard
 from main import models
 
+from django.conf import settings as mcpclient_settings
 from django.utils import six
 
 
@@ -659,6 +660,11 @@ def _get_old_mets_rel_path(sip_uuid):
 
 
 def update_xml_metadata(job, mets, sip_dir, sip_uuid):
+    if (
+        not mcpclient_settings.METADATA_XML_VALIDATION_ENABLED
+        or not mcpclient_settings.XML_VALIDATION
+    ):
+        return []
     xml_metadata_mapping, xml_metadata_errors = get_xml_metadata_mapping(
         sip_dir, reingest=True
     )

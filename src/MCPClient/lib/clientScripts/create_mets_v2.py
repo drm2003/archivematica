@@ -293,9 +293,14 @@ def createDMDIDsFromCSVMetadata(job, path, state):
 
 
 def create_dmd_sections_from_xml(job, path, state):
-    dmd_ids = []
     if path not in state.xml_metadata_mapping:
         return
+    if (
+        not mcpclient_settings.METADATA_XML_VALIDATION_ENABLED
+        or not mcpclient_settings.XML_VALIDATION
+    ):
+        return
+    dmd_ids = []
     for xml_type, xml_path in state.xml_metadata_mapping[path].items():
         if not xml_path:
             continue
