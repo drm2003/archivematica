@@ -43,7 +43,6 @@ import six
 django.setup()
 # dashboard
 from django.conf import settings as mcpclient_settings
-from django.utils import timezone
 from main.models import (
     Agent,
     Derivation,
@@ -1810,9 +1809,7 @@ def main(
                 + "}schemaLocation": "http://www.loc.gov/METS/ http://www.loc.gov/standards/mets/version1121/mets.xsd"
             },
         )
-        etree.SubElement(root, ns.metsBNS + "metsHdr").set(
-            "CREATEDATE", timezone.now().strftime("%Y-%m-%dT%H:%M:%S")
-        )
+        etree.SubElement(root, ns.metsBNS + "metsHdr")
 
         dc = createDublincoreDMDSecFromDBData(
             job,
