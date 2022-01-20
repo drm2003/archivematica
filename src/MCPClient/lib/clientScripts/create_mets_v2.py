@@ -1877,18 +1877,8 @@ def main(
         mets, baseDirectoryPath, sipUUID, sipType
     )
 
-    serialized = mets.serialize()
-    if not createNormativeStructmap:
-        # Remove normative structMap
-        structmaps = serialized.findall(
-            'mets:structMap[@LABEL="Normative Directory Structure"]',
-            namespaces=ns.NSMAP,
-        )
-        for structmap in structmaps:
-            structmap.getparent().remove(structmap)
-            job.pyprint("Removed normative structMap")
-
-    write_mets(etree.ElementTree(serialized), XMLFile)
+    tree = mets.serialize(normative_structmap=createNormativeStructmap)
+    write_mets(etree.ElementTree(tree), XMLFile)
 
     if len(xml_metadata_errors):
         job.pyprint(
