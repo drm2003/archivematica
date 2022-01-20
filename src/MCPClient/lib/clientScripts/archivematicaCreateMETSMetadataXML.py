@@ -47,34 +47,32 @@ def process_xml_metadata(mets, sip_dir, sip_uuid, sip_type):
     for fsentry in mets.all_files():
         if fsentry.use != "original" and fsentry.type != "Directory":
             continue
-        path = fsentry.path
-        if not path:
-            dirs = []
-            fsentry_loop = fsentry
-            while fsentry_loop.parent:
-                dirs.insert(0, fsentry_loop.label)
-                fsentry_loop = fsentry_loop.parent
-            path = os.sep.join(dirs)
+        path = _get_path_from_fsentry(fsentry)
         if path not in xml_metadata_mapping:
             continue
-        dmdsec_mapping = {}
-        for dmdsec in fsentry.dmdsecs:
-            mdwrap = dmdsec.contents
-            othermdtype = getattr(mdwrap, "othermdtype", None)
-            if othermdtype:
-                if othermdtype not in dmdsec_mapping:
-                    dmdsec_mapping[othermdtype] = []
-                dmdsec_mapping[othermdtype].append(dmdsec)
+        dmdsec_mapping = _get_dmdsec_mapping_from_fsentry(fsentry)
         for xml_type, xml_path in xml_metadata_mapping[path].items():
-            if not xml_path and xml_type in dmdsec_mapping:
-                latest_date = ""
-                latest_sec = None
-                for sec in dmdsec_mapping[xml_type]:
-                    date = getattr(sec, "created", "")
-                    if not latest_date or date > latest_date:
-                        latest_date = date
-                        latest_sec = sec
-                latest_sec.status = "deleted"
+            if not xml_path:
+                # Mark latest dmdSec of type as deleted
+                if xml_type in dmdsec_mapping:
+                    latest_date = ""
+                    latest_sec = None
+                    for sec in dmdsec_mapping[xml_type]:
+                        date = getattr(sec, "created", "")
+                        if not latest_date or date > latest_date:
+                            latest_date = date
+                            latest_sec = sec
+                    latest_sec.status = "deleted"
+                continue
+            # Check XML metadata file exists in the DB
+            xml_rel_path = xml_path.relative_to(sip_dir)
+            try:
+                metadata_file = models.File.objects.get(
+                    sip_id=sip_uuid,
+                    currentlocation="%SIPDirectory%{}".format(xml_rel_path),
+                )
+            except models.File.DoesNotExist:
+                xml_metadata_errors.append("No uuid for file: {}".format(xml_rel_path))
                 continue
             tree = etree.parse(str(xml_path))
             try:
@@ -84,32 +82,9 @@ def process_xml_metadata(mets, sip_dir, sip_uuid, sip_type):
                 continue
             if schema_uri:
                 valid, errors = _validate_xml(tree, schema_uri)
-                event_data = {
-                    "eventType": "validation",
-                    "eventDetail": 'type="metadata"; validation-source-type="'
-                    + schema_uri.split(".")[-1]
-                    + '"; validation-source="'
-                    + schema_uri
-                    + '"; program="lxml"; version="'
-                    + etree.__version__
-                    + '"',
-                    "eventOutcome": "pass" if valid else "fail",
-                    "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
-                }
-                xml_rel_path = xml_path.relative_to(sip_dir)
-                try:
-                    file_object = models.File.objects.get(
-                        sip_id=sip_uuid,
-                        currentlocation="%SIPDirectory%{}".format(xml_rel_path),
-                    )
-                except models.File.DoesNotExist:
-                    xml_metadata_errors.append(
-                        "No uuid for file: {}".format(xml_rel_path)
-                    )
-                    continue
-                event_object = insertIntoEvents(file_object.uuid, **event_data)
-                metadata_fsentry = mets.get_file(file_uuid=file_object.uuid)
-                metadata_fsentry.add_premis_event(createmets2.createEvent(event_object))
+                _add_validation_event(
+                    mets, metadata_file.uuid, schema_uri, valid, errors
+                )
                 if not valid:
                     xml_metadata_errors += errors
                     continue
@@ -201,6 +176,29 @@ def _get_xml_metadata_mapping(sip_path, reingest=False):
     return mapping, errors
 
 
+def _get_path_from_fsentry(fsentry):
+    path = fsentry.path
+    if not path:
+        dirs = []
+        while fsentry.parent:
+            dirs.insert(0, fsentry.label)
+            fsentry = fsentry.parent
+        path = os.sep.join(dirs)
+    return path
+
+
+def _get_dmdsec_mapping_from_fsentry(fsentry):
+    dmdsec_mapping = {}
+    for dmdsec in fsentry.dmdsecs:
+        mdwrap = dmdsec.contents
+        othermdtype = getattr(mdwrap, "othermdtype", None)
+        if othermdtype:
+            if othermdtype not in dmdsec_mapping:
+                dmdsec_mapping[othermdtype] = []
+            dmdsec_mapping[othermdtype].append(dmdsec)
+    return dmdsec_mapping
+
+
 def _get_schema_uri(tree):
     XSI = "http://www.w3.org/2001/XMLSchema-instance"
     VALIDATION = mcpclient_settings.XML_VALIDATION
@@ -260,3 +258,21 @@ def _validate_xml(tree, schema_uri):
     if not schema.validate(tree):
         return False, schema.error_log
     return True, []
+
+
+def _add_validation_event(mets, file_uuid, schema_uri, valid, errors):
+    event_data = {
+        "eventType": "validation",
+        "eventDetail": 'type="metadata"; validation-source-type="'
+        + schema_uri.split(".")[-1]
+        + '"; validation-source="'
+        + schema_uri
+        + '"; program="lxml"; version="'
+        + etree.__version__
+        + '"',
+        "eventOutcome": "pass" if valid else "fail",
+        "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
+    }
+    event_object = insertIntoEvents(file_uuid, **event_data)
+    metadata_fsentry = mets.get_file(file_uuid=file_uuid)
+    metadata_fsentry.add_premis_event(createmets2.createEvent(event_object))
