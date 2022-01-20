@@ -90,7 +90,7 @@ lxml==4.6.3
     #   ammcpc
     #   metsrw
     #   python-cas
-metsrw @ git+https://github.com/artefactual-labs/mets-reader-writer.git@f6ad973a359a7ef8125a839c983290fa95f32361
+metsrw @ git+https://github.com/artefactual-labs/mets-reader-writer.git@2e4092c9ffeae854c02ea6f133df19124c478778
     # via -r requirements.in
 mozilla-django-oidc==1.2.4
     # via -r requirements.in

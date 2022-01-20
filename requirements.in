@@ -22,7 +22,7 @@ jsonschema==2.6.0
 lazy-paged-sequence
 logutils==0.3.3
 lxml~=4.6
-git+https://github.com/artefactual-labs/mets-reader-writer.git@f6ad973a359a7ef8125a839c983290fa95f32361#egg=metsrw
+git+https://github.com/artefactual-labs/mets-reader-writer.git@2e4092c9ffeae854c02ea6f133df19124c478778#egg=metsrw
 mysqlclient==1.4.6
 ndg-httpsclient
 opf-fido==1.4.1
