@@ -2,7 +2,6 @@
 import copy
 from lxml import etree
 import os
-from uuid import uuid4
 
 import metsrw
 import scandir
@@ -10,19 +9,12 @@ import scandir
 import create_mets_v2 as createmets2
 import archivematicaCreateMETSRights as createmetsrights
 import archivematicaCreateMETSMetadataCSV as createmetscsv
-from archivematicaCreateMETSMetadataXML import (
-    get_schema_uri,
-    get_xml_metadata_mapping,
-    validate_xml,
-)
 
-from databaseFunctions import insertIntoEvents
 import namespaces as ns
 
 # dashboard
 from main import models
 
-from django.conf import settings as mcpclient_settings
 from django.utils import six
 
 
@@ -659,103 +651,7 @@ def _get_old_mets_rel_path(sip_uuid):
     )
 
 
-def update_xml_metadata(job, mets, sip_dir, sip_uuid):
-    if (
-        not mcpclient_settings.METADATA_XML_VALIDATION_ENABLED
-        or not mcpclient_settings.XML_VALIDATION
-    ):
-        return []
-    xml_metadata_mapping, xml_metadata_errors = get_xml_metadata_mapping(
-        sip_dir, reingest=True
-    )
-    for fsentry in mets.all_files():
-        if fsentry.use != "original" and fsentry.type != "Directory":
-            continue
-        path = fsentry.path
-        if not path:
-            dirs = []
-            fsentry_loop = fsentry
-            while fsentry_loop.parent:
-                dirs.insert(0, fsentry_loop.label)
-                fsentry_loop = fsentry_loop.parent
-            path = os.sep.join(dirs)
-        if path not in xml_metadata_mapping:
-            continue
-        dmdsec_mapping = {}
-        for dmdsec in fsentry.dmdsecs:
-            mdwrap = dmdsec.contents
-            othermdtype = getattr(mdwrap, "othermdtype", None)
-            if othermdtype:
-                if othermdtype not in dmdsec_mapping:
-                    dmdsec_mapping[othermdtype] = []
-                dmdsec_mapping[othermdtype].append(dmdsec)
-        for xml_type, xml_path in xml_metadata_mapping[path].items():
-            if not xml_path and xml_type in dmdsec_mapping:
-                latest_date = ""
-                latest_sec = None
-                for sec in dmdsec_mapping[xml_type]:
-                    date = getattr(sec, "created", "")
-                    if not latest_date or date > latest_date:
-                        latest_date = date
-                        latest_sec = sec
-                latest_sec.status = "deleted"
-                continue
-            tree = etree.parse(str(xml_path))
-            try:
-                schema_uri = get_schema_uri(tree)
-            except ValueError as err:
-                xml_metadata_errors.append(err)
-                continue
-            if schema_uri:
-                valid, errors = validate_xml(tree, schema_uri)
-                event_data = {
-                    "eventType": "validation",
-                    "eventDetail": 'type="metadata"; validation-source-type="'
-                    + schema_uri.split(".")[-1]
-                    + '"; validation-source="'
-                    + schema_uri
-                    + '"; program="lxml"; version="'
-                    + etree.__version__
-                    + '"',
-                    "eventOutcome": "pass" if valid else "fail",
-                    "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
-                }
-                xml_rel_path = xml_path.relative_to(sip_dir)
-                try:
-                    file_object = models.File.objects.get(
-                        sip_id=sip_uuid,
-                        currentlocation="%SIPDirectory%{}".format(xml_rel_path),
-                    )
-                except models.File.DoesNotExist:
-                    xml_metadata_errors.append(
-                        "No uuid for file: {}".format(xml_rel_path)
-                    )
-                    continue
-                event_object = insertIntoEvents(file_object.uuid, **event_data)
-                metadata_fsentry = mets.get_file(file_uuid=file_object.uuid)
-                metadata_fsentry.add_premis_event(createmets2.createEvent(event_object))
-                if not valid:
-                    xml_metadata_errors += errors
-                    continue
-            dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
-            dmdsec.status = "update"
-            if xml_type in dmdsec_mapping:
-                group_id = getattr(dmdsec_mapping[xml_type][0], "group_id", "")
-                if not group_id:
-                    group_id = str(uuid4())
-                dmdsec.group_id = group_id
-                for previous_dmdsec in dmdsec_mapping[xml_type]:
-                    previous_dmdsec.group_id = group_id
-                    status = previous_dmdsec.status
-                    # TODO: check why status is None in some cases where it shouldn't
-                    if not status:
-                        status = "original"
-                    if not status.endswith("-superseded"):
-                        previous_dmdsec.status = status + "-superseded"
-    return xml_metadata_errors
-
-
-def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
+def update_mets(job, sip_dir, sip_uuid, state):
 
     old_mets_path = os.path.join(sip_dir, _get_old_mets_rel_path(sip_uuid))
     job.pyprint("Looking for old METS at path", old_mets_path)
@@ -769,16 +665,5 @@ def update_mets(job, sip_dir, sip_uuid, state, keep_normative_structmap=True):
     add_events(job, mets, sip_uuid)
     add_new_files(job, mets, sip_uuid, sip_dir)
     delete_files(mets, sip_uuid)
-    xml_metadata_errors = update_xml_metadata(job, mets, sip_dir, sip_uuid)
 
-    serialized = mets.serialize()
-    if not keep_normative_structmap:
-        # Remove normative structMap
-        structmaps = serialized.findall(
-            'mets:structMap[@LABEL="Normative Directory Structure"]',
-            namespaces=ns.NSMAP,
-        )
-        for structmap in structmaps:
-            structmap.getparent().remove(structmap)
-            job.pyprint("Removed normative structMap")
-    return serialized, xml_metadata_errors
+    return mets

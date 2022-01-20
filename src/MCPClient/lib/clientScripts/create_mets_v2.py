@@ -24,7 +24,6 @@
 
 import collections
 import copy
-from datetime import datetime
 from glob import glob
 from itertools import chain
 import lxml.etree as etree
@@ -37,6 +36,7 @@ import traceback
 from uuid import uuid4
 
 import django
+import metsrw
 import scandir
 import six
 
@@ -59,11 +59,7 @@ from main.models import (
 
 import archivematicaCreateMETSReingest
 from archivematicaCreateMETSMetadataCSV import parseMetadata
-from archivematicaCreateMETSMetadataXML import (
-    get_schema_uri,
-    get_xml_metadata_mapping,
-    validate_xml,
-)
+from archivematicaCreateMETSMetadataXML import process_xml_metadata
 from archivematicaCreateMETSRights import archivematicaGetRights
 from archivematicaCreateMETSRightsDspaceMDRef import (
     archivematicaCreateMETSRightsDspaceMDRef,
@@ -83,7 +79,6 @@ from create_mets_dataverse_v2 import (
     create_dataverse_tabfile_dmdsec,
 )
 from custom_handlers import get_script_logger
-from databaseFunctions import insertIntoEvents
 import namespaces as ns
 from change_names import change_name
 
@@ -290,96 +285,6 @@ def createDMDIDsFromCSVMetadata(job, path, state):
     metadata = state.CSV_METADATA.get(unicodeToStr(path), {})
     dmdsecs = createDmdSecsFromCSVParsedMetadata(job, metadata, state)
     return " ".join([d.get("ID") for d in dmdsecs])
-
-
-def create_dmd_sections_from_xml(job, path, state):
-    if path not in state.xml_metadata_mapping:
-        return
-    if (
-        not mcpclient_settings.METADATA_XML_VALIDATION_ENABLED
-        or not mcpclient_settings.XML_VALIDATION
-    ):
-        return
-    dmd_ids = []
-    for xml_type, xml_path in state.xml_metadata_mapping[path].items():
-        if not xml_path:
-            continue
-        tree = etree.parse(str(xml_path))
-        try:
-            schema_uri = get_schema_uri(tree)
-        except ValueError as err:
-            state.xml_metadata_errors.append(err)
-            continue
-        if schema_uri:
-            valid, errors = validate_xml(tree, schema_uri)
-            # Store validation data to add it later as a PREMIS event related
-            # to the metadata file.
-            state.xml_metadata_events[xml_path] = {
-                "eventType": "validation",
-                "eventDetail": 'type="metadata"; validation-source-type="'
-                + schema_uri.split(".")[-1]
-                + '"; validation-source="'
-                + schema_uri
-                + '"; program="lxml"; version="'
-                + etree.__version__
-                + '"',
-                "eventOutcome": "pass" if valid else "fail",
-                "eventOutcomeDetailNote": "\n".join([str(err) for err in errors]),
-            }
-            if not valid:
-                state.xml_metadata_errors += errors
-                continue
-        state.globalDmdSecCounter += 1
-        DMDID = "dmdSec_{}".format(state.globalDmdSecCounter)
-        dmd_sec = etree.Element(
-            ns.metsBNS + "dmdSec",
-            ID=DMDID,
-            CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-            STATUS="original",
-        )
-        state.dmdSecs.append(dmd_sec)
-        md_wrap = etree.SubElement(dmd_sec, ns.metsBNS + "mdWrap")
-        md_wrap.set("MDTYPE", "OTHER")
-        md_wrap.set("OTHERMDTYPE", xml_type)
-        xml_data = etree.SubElement(md_wrap, ns.metsBNS + "xmlData")
-        xml_data.append(tree.getroot())
-        dmd_ids.append(DMDID)
-    return " ".join(dmd_ids)
-
-
-def append_xml_metadata_events(job, root, state, sip_path, sip_uuid):
-    for metadata_file_abs_path, event_data in state.xml_metadata_events.items():
-        metadata_file_rel_path = metadata_file_abs_path.relative_to(sip_path)
-        try:
-            file_object = File.objects.get(
-                sip_id=sip_uuid,
-                currentlocation="%SIPDirectory%{}".format(metadata_file_rel_path),
-            )
-        except File.DoesNotExist:
-            state.xml_metadata_errors.append(
-                "No uuid for file: {}".format(metadata_file_rel_path)
-            )
-            continue
-        event_object = insertIntoEvents(file_object.uuid, **event_data)
-        amd_id = ns.xml_find_premis(
-            root,
-            './/mets:FLocat[@xlink:href="{}"]/..'.format(metadata_file_rel_path),
-        ).attrib["ADMID"]
-        amd_sec = ns.xml_find_premis(
-            root,
-            './/mets:amdSec[@ID="{}"]'.format(amd_id),
-        )
-        state.globalDigiprovMDCounter += 1
-        digiprovMD = etree.SubElement(
-            amd_sec,
-            ns.metsBNS + "digiprovMD",
-            ID="digiprovMD_" + str(state.globalDigiprovMDCounter),
-        )
-        mdWrap = etree.SubElement(
-            digiprovMD, ns.metsBNS + "mdWrap", MDTYPE="PREMIS:EVENT"
-        )
-        xmlData = etree.SubElement(mdWrap, ns.metsBNS + "xmlData")
-        xmlData.append(createEvent(event_object))
 
 
 def createDmdSecsFromCSVParsedMetadata(job, metadata, state):
@@ -1113,12 +1018,16 @@ def createFileSec(
         parentDiv, ns.metsBNS + "div", TYPE="Directory", LABEL=directoryName
     )
 
-    dir_relative_path = directoryPath.replace(baseDirectoryPath, "", 1)
-    DMDIDS = createDMDIDsFromCSVMetadata(job, dir_relative_path, state)
-    XMLDMDIDS = create_dmd_sections_from_xml(job, dir_relative_path, state)
-    DMDIDS = " ".join(i for i in [dir_dmd_id, DMDIDS, XMLDMDIDS] if i)
-    if DMDIDS:
-        structMapDiv.set("DMDID", DMDIDS)
+    DMDIDS = createDMDIDsFromCSVMetadata(
+        job, directoryPath.replace(baseDirectoryPath, "", 1), state
+    )
+    if DMDIDS or dir_dmd_id:
+        if DMDIDS and dir_dmd_id:
+            structMapDiv.set("DMDID", dir_dmd_id + " " + DMDIDS)
+        elif DMDIDS:
+            structMapDiv.set("DMDID", DMDIDS)
+        else:
+            structMapDiv.set("DMDID", dir_dmd_id)
 
     for item in directoryContents:
         itemdirectoryPath = os.path.join(directoryPath, item)
@@ -1230,20 +1139,11 @@ def createFileSec(
                     use = "original"
                 # Check for CSV-based Dublincore dmdSec
                 if use == "original":
-                    file_relative_path = f.originallocation.replace(
-                        "%transferDirectory%", "", 1
-                    )
                     DMDIDS = createDMDIDsFromCSVMetadata(
                         job,
-                        file_relative_path,
+                        f.originallocation.replace("%transferDirectory%", "", 1),
                         state,
                     )
-                    XMLDMDIDS = create_dmd_sections_from_xml(
-                        job,
-                        file_relative_path,
-                        state,
-                    )
-                    DMDIDS = " ".join(i for i in [DMDIDS, XMLDMDIDS] if i)
                     if DMDIDS:
                         fileDiv.set("DMDID", DMDIDS)
                     # More special TRIM processing
@@ -1803,19 +1703,14 @@ def main(
     if "REIN" in sipType:
         job.pyprint("Updating METS during reingest")
         # don't keep existing normative structmap if creating one
-        root, state.xml_metadata_errors = archivematicaCreateMETSReingest.update_mets(
+        mets = archivematicaCreateMETSReingest.update_mets(
             job,
             baseDirectoryPath,
             sipUUID,
             state,
-            keep_normative_structmap=createNormativeStructmap,
         )
     else:
         state.CSV_METADATA = parseMetadata(job, baseDirectoryPath, state)
-        (
-            state.xml_metadata_mapping,
-            state.xml_metadata_errors,
-        ) = get_xml_metadata_mapping(baseDirectoryPath)
         state.xml_metadata_events = {}
 
         baseDirectoryPath = os.path.join(baseDirectoryPath, "")
@@ -1968,21 +1863,37 @@ def main(
         if arranged_structmap is not None:
             root.append(arranged_structmap)
 
-        append_xml_metadata_events(job, root, state, baseDirectoryPath, sipUUID)
-
         job.pyprint("DmdSecs:", state.globalDmdSecCounter)
         job.pyprint("AmdSecs:", state.globalAmdSecCounter)
         job.pyprint("TechMDs:", state.globalTechMDCounter)
         job.pyprint("RightsMDs:", state.globalRightsMDCounter)
         job.pyprint("DigiprovMDs:", state.globalDigiprovMDCounter)
 
-    tree = etree.ElementTree(root)
-    write_mets(tree, XMLFile)
+        # Parse METS to metsrw
+        mets = metsrw.METSDocument.fromtree(root)
 
-    if len(state.xml_metadata_errors):
+    # The mets variable is now a metsrw instance on ingest and re-ingest
+    mets, xml_metadata_errors = process_xml_metadata(
+        mets, baseDirectoryPath, sipUUID, sipType
+    )
+
+    serialized = mets.serialize()
+    if not createNormativeStructmap:
+        # Remove normative structMap
+        structmaps = serialized.findall(
+            'mets:structMap[@LABEL="Normative Directory Structure"]',
+            namespaces=ns.NSMAP,
+        )
+        for structmap in structmaps:
+            structmap.getparent().remove(structmap)
+            job.pyprint("Removed normative structMap")
+
+    write_mets(etree.ElementTree(serialized), XMLFile)
+
+    if len(xml_metadata_errors):
         job.pyprint(
             "Error(s) processing and/or validating XML metadata:\n\t- {}".format(
-                "\n\t- ".join([str(err) for err in state.xml_metadata_errors])
+                "\n\t- ".join([str(err) for err in xml_metadata_errors])
             ),
             file=sys.stderr,
         )
