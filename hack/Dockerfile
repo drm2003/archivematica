@@ -89,7 +89,7 @@ RUN set -ex \
 	&& rm -rf /var/lib/apt/lists/*
 
 RUN set -ex \
-	&& curl -s https://bootstrap.pypa.io/get-pip.py | python3.6 \
+	&& curl -s https://bootstrap.pypa.io/pip/3.6/get-pip.py | python3.6 \
 	&& update-alternatives --install /usr/bin/python python /usr/bin/python3 10
 
 COPY requirements-dev-py3.txt /src/requirements-dev-py3.txt
@@ -205,7 +205,7 @@ RUN set -ex \
 
 RUN set -ex \
 	&& curl -s https://bootstrap.pypa.io/pip/2.7/get-pip.py | python2.7 \
-	&& curl -s https://bootstrap.pypa.io/get-pip.py | python3.6
+	&& curl -s https://bootstrap.pypa.io/pip/3.6/get-pip.py | python3.6
 
 COPY requirements-dev.txt /src/requirements-dev.txt
 RUN pip2 install -r /src/requirements-dev.txt
