@@ -24,6 +24,7 @@
 
 import collections
 import copy
+from datetime import datetime
 from glob import glob
 from itertools import chain
 import lxml.etree as etree
@@ -249,7 +250,11 @@ def getDirDmdSec(dir_mdl, relativeDirectoryPath):
     premis:objectIdentifiers. Cf. https://projects.artefactual.com/issues/11192.
     """
     dir_uuid = dir_mdl.uuid
-    ret = etree.Element(ns.metsBNS + "dmdSec")
+    ret = etree.Element(
+        ns.metsBNS + "dmdSec",
+        STATUS="original",
+        CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+    )
     mdWrap = etree.SubElement(ret, ns.metsBNS + "mdWrap")
     mdWrap.set("MDTYPE", "PREMIS:OBJECT")
     xmlData = etree.SubElement(mdWrap, ns.metsBNS + "xmlData")
@@ -309,7 +314,12 @@ def createDmdSecsFromCSVParsedMetadata(job, metadata, state):
             if dc is None:
                 state.globalDmdSecCounter += 1
                 ID = "dmdSec_" + state.globalDmdSecCounter.__str__()
-                dmdSec = etree.Element(ns.metsBNS + "dmdSec", ID=ID)
+                dmdSec = etree.Element(
+                    ns.metsBNS + "dmdSec",
+                    ID=ID,
+                    STATUS="original",
+                    CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                )
                 state.dmdSecs.append(dmdSec)
                 ret.append(dmdSec)
                 mdWrap = etree.SubElement(dmdSec, ns.metsBNS + "mdWrap")
@@ -347,7 +357,12 @@ def createDmdSecsFromCSVParsedMetadata(job, metadata, state):
             if other is None:
                 state.globalDmdSecCounter += 1
                 ID = "dmdSec_" + state.globalDmdSecCounter.__str__()
-                dmdSec = etree.Element(ns.metsBNS + "dmdSec", ID=ID)
+                dmdSec = etree.Element(
+                    ns.metsBNS + "dmdSec",
+                    ID=ID,
+                    STATUS="original",
+                    CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                )
                 state.dmdSecs.append(dmdSec)
                 ret.append(dmdSec)
                 mdWrap = etree.SubElement(dmdSec, ns.metsBNS + "mdWrap")
@@ -403,7 +418,11 @@ def createDublincoreDMDSecFromDBData(
         else:  # break not called, no DC successfully parsed
             return None
     state.globalDmdSecCounter += 1
-    dmdSec = etree.Element(ns.metsBNS + "dmdSec")
+    dmdSec = etree.Element(
+        ns.metsBNS + "dmdSec",
+        STATUS="original",
+        CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+    )
     ID = "dmdSec_" + state.globalDmdSecCounter.__str__()
     dmdSec.set("ID", ID)
     mdWrap = etree.SubElement(dmdSec, ns.metsBNS + "mdWrap")
@@ -432,7 +451,12 @@ def createDSpaceDMDSec(job, label, dspace_mets_path, directoryPathSTR, state):
     # Create mdRef to DSpace METS file
     state.globalDmdSecCounter += 1
     dmdid = "dmdSec_" + str(state.globalDmdSecCounter)
-    dmdsec = etree.Element(ns.metsBNS + "dmdSec", ID=dmdid)
+    dmdsec = etree.Element(
+        ns.metsBNS + "dmdSec",
+        ID=dmdid,
+        STATUS="original",
+        CREATED=datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+    )
     dmdsecs[dmdid] = dmdsec
     xptr_dmdids = [
         i.get("ID") for i in root.findall("{http://www.loc.gov/METS/}dmdSec")

@@ -21,11 +21,9 @@
 
 import csv
 from lxml import etree
-import os
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
-from uuid import uuid4
 
 import create_mets_v2 as createmets2
 
@@ -47,24 +45,13 @@ def process_xml_metadata(mets, sip_dir, sip_uuid, sip_type):
     for fsentry in mets.all_files():
         if fsentry.use != "original" and fsentry.type != "Directory":
             continue
-        path = _get_path_from_fsentry(fsentry)
+        path = fsentry.get_path()
         if path not in xml_metadata_mapping:
             continue
-        dmdsec_mapping = _get_dmdsec_mapping_from_fsentry(fsentry)
         for xml_type, xml_path in xml_metadata_mapping[path].items():
             if not xml_path:
-                # Mark latest dmdSec of type as deleted
-                if xml_type in dmdsec_mapping:
-                    latest_date = ""
-                    latest_sec = None
-                    for sec in dmdsec_mapping[xml_type]:
-                        date = getattr(sec, "created", "")
-                        if not latest_date or date > latest_date:
-                            latest_date = date
-                            latest_sec = sec
-                    latest_sec.status = "deleted"
+                fsentry.delete_dmdsec("OTHER", xml_type)
                 continue
-            # Check XML metadata file exists in the DB
             xml_rel_path = xml_path.relative_to(sip_dir)
             try:
                 metadata_file = models.File.objects.get(
@@ -88,21 +75,12 @@ def process_xml_metadata(mets, sip_dir, sip_uuid, sip_type):
                 if not valid:
                     xml_metadata_errors += errors
                     continue
-            dmdsec = fsentry.add_dmdsec(tree.getroot(), "OTHER", othermdtype=xml_type)
-            dmdsec.status = "update" if "REIN" in sip_type else "original"
-            if xml_type in dmdsec_mapping:
-                group_id = getattr(dmdsec_mapping[xml_type][0], "group_id", "")
-                if not group_id:
-                    group_id = str(uuid4())
-                dmdsec.group_id = group_id
-                for previous_dmdsec in dmdsec_mapping[xml_type]:
-                    previous_dmdsec.group_id = group_id
-                    status = previous_dmdsec.status
-                    # TODO: check why status is None in some cases where it shouldn't
-                    if not status:
-                        status = "original"
-                    if not status.endswith("-superseded"):
-                        previous_dmdsec.status = status + "-superseded"
+            fsentry.add_dmdsec(
+                tree.getroot(),
+                "OTHER",
+                othermdtype=xml_type,
+                status="update" if "REIN" in sip_type else "original",
+            )
     return mets, xml_metadata_errors
 
 
@@ -181,29 +159,6 @@ def _get_xml_metadata_mapping(sip_path, reingest=False):
                     row["metadata"] = source_metadata_path.parent / row["metadata"]
                 mapping[row["filename"]][row["type"]] = row["metadata"]
     return mapping, errors
-
-
-def _get_path_from_fsentry(fsentry):
-    path = fsentry.path
-    if not path:
-        dirs = []
-        while fsentry.parent:
-            dirs.insert(0, fsentry.label)
-            fsentry = fsentry.parent
-        path = os.sep.join(dirs)
-    return path
-
-
-def _get_dmdsec_mapping_from_fsentry(fsentry):
-    dmdsec_mapping = {}
-    for dmdsec in fsentry.dmdsecs:
-        mdwrap = dmdsec.contents
-        othermdtype = getattr(mdwrap, "othermdtype", None)
-        if othermdtype:
-            if othermdtype not in dmdsec_mapping:
-                dmdsec_mapping[othermdtype] = []
-            dmdsec_mapping[othermdtype].append(dmdsec)
-    return dmdsec_mapping
 
 
 def _get_schema_uri(tree):
