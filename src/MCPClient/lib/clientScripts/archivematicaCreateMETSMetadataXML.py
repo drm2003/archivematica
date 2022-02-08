@@ -161,6 +161,13 @@ def _get_xml_metadata_mapping(sip_path, reingest=False):
                         )
                     )
                     continue
+                if row["type"] == "CUSTOM":
+                    errors.append(
+                        "A row in {} is using CUSTOM, a reserved type".format(
+                            source_metadata_path
+                        )
+                    )
+                    continue
                 if row["filename"] not in mapping:
                     mapping[row["filename"]] = {}
                 elif row["type"] in mapping[row["filename"]]:
