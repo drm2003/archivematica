@@ -24,6 +24,7 @@ from lxml import etree
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import urlopen
+import requests
 
 import create_mets_v2 as createmets2
 
@@ -190,6 +191,20 @@ def _get_schema_uri(tree):
     return VALIDATION[key]
 
 
+class Resolver(etree.Resolver):
+    def resolve(self, url, id, context):
+        url_scheme = urlparse(url).scheme
+        if url_scheme in ("http", "https"):
+            try:
+                response = requests.get(url)
+            except requests.RequestException:
+                return super().resolve(url, id, context)
+            else:
+                return self.resolve_string(response.text, context)
+        else:
+            return super().resolve(url, id, context)
+
+
 def _validate_xml(tree, schema_uri):
     schema_type = schema_uri.split(".")[-1]
     parse_result = urlparse(schema_uri)
@@ -207,7 +222,16 @@ def _validate_xml(tree, schema_uri):
                 schema = etree.DTD(f)
             elif schema_type == "xsd":
                 schema_contents = etree.parse(f)
-                schema = etree.XMLSchema(schema_contents)
+                try:
+                    schema = etree.XMLSchema(schema_contents)
+                except etree.XMLSchemaParseError:
+                    # Try parsing the schema again with a custom resolver
+                    parser = etree.XMLParser()
+                    resolver = Resolver()
+                    parser.resolvers.add(resolver)
+                    with urlopen(schema_uri) as f2:
+                        schema_contents = etree.parse(f2, parser)
+                    schema = etree.XMLSchema(schema_contents)
             elif schema_type == "rng":
                 schema_contents = etree.parse(f)
                 schema = etree.RelaxNG(schema_contents)
