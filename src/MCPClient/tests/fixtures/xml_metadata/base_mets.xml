@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<mets:mets xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:mets="http://www.loc.gov/METS/" xsi:schemaLocation="http://www.loc.gov/METS/ http://www.loc.gov/standards/mets/version1121/mets.xsd">
+  <mets:metsHdr CREATEDATE="2022-02-10T13:24:52"/>
+  <mets:dmdSec ID="dmdSec_1" CREATED="2022-02-10T13:24:52" STATUS="original">
+    <mets:mdWrap MDTYPE="PREMIS:OBJECT">
+      <mets:xmlData>
+        <fake/>
+      </mets:xmlData>
+    </mets:mdWrap>
+  </mets:dmdSec>
+  <mets:amdSec ID="amdSec_1"/>
+  <mets:fileSec>
+    <mets:fileGrp USE="original">
+      <mets:file ID="file-58e3be6a-94bf-402c-a966-c8d944a671ea" GROUPID="Group-58e3be6a-94bf-402c-a966-c8d944a671ea" ADMID="amdSec_1">
+        <mets:FLocat xlink:href="objects/directory/file.txt" LOCTYPE="OTHER" OTHERLOCTYPE="SYSTEM"/>
+      </mets:file>
+    </mets:fileGrp>
+  </mets:fileSec>
+  <mets:structMap TYPE="physical" ID="structMap_1" LABEL="Archivematica default">
+    <mets:div TYPE="Directory" LABEL="xml_metadata-cf521ce4-18af-457c-811d-9e4a708a81a4" DMDID="dmdSec_1">
+      <mets:div TYPE="Directory" LABEL="objects">
+        <mets:div TYPE="Directory" LABEL="directory">
+          <mets:div TYPE="Item" LABEL="file.txt">
+            <mets:fptr FILEID="file-58e3be6a-94bf-402c-a966-c8d944a671ea"/>
+          </mets:div>
+        </mets:div>
+      </mets:div>
+    </mets:div>
+  </mets:structMap>
+</mets:mets>
