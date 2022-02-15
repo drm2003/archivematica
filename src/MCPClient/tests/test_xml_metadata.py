@@ -22,6 +22,41 @@ SIP_UUID = uuid4()
 METADATA_DIR = SIP_DIR / "objects" / "metadata"
 TRANSFER_METADATA_DIR = METADATA_DIR / "transfers" / "transfer_a"
 TRANSFER_SOURCE_METADATA_CSV = TRANSFER_METADATA_DIR / "source-metadata.csv"
+SCHEMAS = {
+    "xsd": """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema  xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="foo">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="bar" type="xs:string"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+""",
+    "dtd": """<!ELEMENT foo (bar)>
+<!ELEMENT bar (#PCDATA)>
+""",
+    "rng": """<element name="foo" xmlns="http://relaxng.org/ns/structure/1.0">
+  <oneOrMore>
+    <element name="bar">
+      <text/>
+    </element>
+  </oneOrMore>
+</element>
+""",
+}
+
+
+@pytest.fixture()
+def make_schema_file(tmp_path):
+    def _make_schema_file(schema_type):
+        schema_path = tmp_path / (schema_type + "." + schema_type)
+        schema_path.write_text(SCHEMAS[schema_type])
+
+        return str(schema_path)
+
+    return _make_schema_file
 
 
 @pytest.fixture()
@@ -94,11 +129,11 @@ def test_disabled_settings(settings, make_mock_mets):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("schema", ["xsd", "dtd", "rng"])
-def test_validation_success(settings, make_metadata_file, make_mock_mets, schema):
+def test_validation_success(
+    settings, make_metadata_file, make_mock_mets, make_schema_file, schema
+):
     settings.METADATA_XML_VALIDATION_ENABLED = True
-    settings.XML_VALIDATION = {
-        "foo": str(FIXTURES / "schemas" / (schema + "." + schema)),
-    }
+    settings.XML_VALIDATION = {"foo": make_schema_file(schema)}
     source_metadata_csv_contents = """filename,metadata,type
 objects,valid.xml,mdtype
 """
@@ -121,11 +156,11 @@ objects,valid.xml,mdtype
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("schema", ["xsd", "dtd", "rng"])
-def test_validation_error(settings, make_metadata_file, make_mock_mets, schema):
+def test_validation_error(
+    settings, make_metadata_file, make_mock_mets, make_schema_file, schema
+):
     settings.METADATA_XML_VALIDATION_ENABLED = True
-    settings.XML_VALIDATION = {
-        "foo": str(FIXTURES / "schemas" / (schema + "." + schema)),
-    }
+    settings.XML_VALIDATION = {"foo": make_schema_file(schema)}
     source_metadata_csv_contents = """filename,metadata,type
 objects,invalid.xml,mdtype
 """
