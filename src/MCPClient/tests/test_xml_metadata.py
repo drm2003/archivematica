@@ -19,7 +19,6 @@ from archivematicaCreateMETSMetadataXML import process_xml_metadata
 FIXTURES = Path(__file__).parent.resolve() / "fixtures" / "xml_metadata"
 SIP_DIR = FIXTURES / "sip_dir"
 SIP_UUID = uuid4()
-BASE_METS = str(FIXTURES / "base_mets.xml")
 METADATA_DIR = SIP_DIR / "objects" / "metadata"
 TRANSFER_METADATA_DIR = METADATA_DIR / "transfers" / "transfer_a"
 TRANSFER_SOURCE_METADATA_CSV = TRANSFER_METADATA_DIR / "source-metadata.csv"
@@ -46,46 +45,56 @@ def make_metadata_file(sip):
     return _make_metadata_file
 
 
+@pytest.fixture()
+def make_mock_mets(mocker):
+    def _make_mock_mets(metadata_file_uuids=[]):
+        files = [metsrw.FSEntry(path="objects")]
+        for uuid in metadata_file_uuids:
+            files.append(metsrw.FSEntry(file_uuid=uuid))
+        mock_mets = mocker.Mock()
+        mock_mets.all_files.return_value = files
+        mock_mets.get_file.side_effect = lambda **kwargs: next(
+            (
+                f
+                for f in files
+                if all(v == getattr(f, k, None) for k, v in kwargs.items())
+            ),
+            None,
+        )
+        return mock_mets
+
+    return _make_mock_mets
+
+
 def update_source_metadata_csv(csv_path, contents):
     with open(csv_path, "w") as f:
         f.write(contents)
 
 
-def add_metadata_file_to_mets(mets, metadata_file_rel_path, metadata_file):
-    md_fsentry = metsrw.FSEntry(
-        path=metadata_file_rel_path,
-        use="metadata",
-        file_uuid=str(metadata_file.uuid),
-    )
-    mets.append(md_fsentry)
-    return md_fsentry
-
-
 def test_invalid_settings(settings):
     settings.METADATA_XML_VALIDATION_ENABLED = True
-    mets = metsrw.METSDocument.fromfile(BASE_METS)
     with pytest.raises(AttributeError) as error:
-        process_xml_metadata(mets, SIP_DIR, SIP_UUID, "sip_type")
+        process_xml_metadata("fake_mets", SIP_DIR, SIP_UUID, "sip_type")
     assert "object has no attribute 'XML_VALIDATION'" in str(error)
 
 
-def test_disabled_settings(settings):
+def test_disabled_settings(settings, make_mock_mets):
+    mock_mets = make_mock_mets()
+    objects_fsentry = mock_mets.get_file(path="objects")
     settings.METADATA_XML_VALIDATION_ENABLED = False
-    mets = metsrw.METSDocument.fromfile(BASE_METS)
-    objects = mets.get_file(label="objects", type="Directory")
-    mets, errors = process_xml_metadata(mets, SIP_DIR, SIP_UUID, "sip_type")
-    assert objects.dmdsecs == []
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    assert objects_fsentry.dmdsecs == []
     assert errors == []
     settings.METADATA_XML_VALIDATION_ENABLED = True
     settings.XML_VALIDATION = {}
-    mets, errors = process_xml_metadata(mets, SIP_DIR, SIP_UUID, "sip_type")
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
     assert errors == []
-    assert objects.dmdsecs == []
+    assert objects_fsentry.dmdsecs == []
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("schema", ["xsd", "dtd", "rng"])
-def test_validation_success(settings, make_metadata_file, schema):
+def test_validation_success(settings, make_metadata_file, make_mock_mets, schema):
     settings.METADATA_XML_VALIDATION_ENABLED = True
     settings.XML_VALIDATION = {
         "foo": str(FIXTURES / "schemas" / (schema + "." + schema)),
@@ -98,21 +107,21 @@ objects,valid.xml,mdtype
     )
     metadata_file_rel_path = (TRANSFER_METADATA_DIR / "valid.xml").relative_to(SIP_DIR)
     metadata_file = make_metadata_file(metadata_file_rel_path)
-    mets = metsrw.METSDocument.fromfile(BASE_METS)
-    md_fsentry = add_metadata_file_to_mets(mets, metadata_file_rel_path, metadata_file)
-    objects = mets.get_file(label="objects", type="Directory")
-    mets, errors = process_xml_metadata(mets, SIP_DIR, SIP_UUID, "sip_type")
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    objects_fsentry = mock_mets.get_file(path="objects")
+    metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
     assert errors == []
-    assert objects.dmdsecs[0].status == "original"
-    assert objects.dmdsecs[0].contents.mdtype == "OTHER"
-    assert objects.dmdsecs[0].contents.othermdtype == "mdtype"
-    assert objects.dmdsecs[0].contents.document.tag == "foo"
-    assert md_fsentry.get_premis_events()[0].event_outcome == "pass"
+    assert objects_fsentry.dmdsecs[0].status == "original"
+    assert objects_fsentry.dmdsecs[0].contents.mdtype == "OTHER"
+    assert objects_fsentry.dmdsecs[0].contents.othermdtype == "mdtype"
+    assert objects_fsentry.dmdsecs[0].contents.document.tag == "foo"
+    assert metadata_fsentry.get_premis_events()[0].event_outcome == "pass"
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("schema", ["xsd", "dtd", "rng"])
-def test_validation_error(settings, make_metadata_file, schema):
+def test_validation_error(settings, make_metadata_file, make_mock_mets, schema):
     settings.METADATA_XML_VALIDATION_ENABLED = True
     settings.XML_VALIDATION = {
         "foo": str(FIXTURES / "schemas" / (schema + "." + schema)),
@@ -127,19 +136,22 @@ objects,invalid.xml,mdtype
         SIP_DIR
     )
     metadata_file = make_metadata_file(metadata_file_rel_path)
-    mets = metsrw.METSDocument.fromfile(BASE_METS)
-    md_fsentry = add_metadata_file_to_mets(mets, metadata_file_rel_path, metadata_file)
-    objects = mets.get_file(label="objects", type="Directory")
-    mets, errors = process_xml_metadata(mets, SIP_DIR, SIP_UUID, "sip_type")
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    objects_fsentry = mock_mets.get_file(path="objects")
+    metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
     assert len(errors) > 0
-    assert objects.dmdsecs == []
-    assert md_fsentry.get_premis_events()[0].event_outcome == "fail"
+    assert objects_fsentry.dmdsecs == []
+    assert metadata_fsentry.get_premis_events()[0].event_outcome == "fail"
     for error in errors:
-        assert str(error) in md_fsentry.get_premis_events()[0].event_outcome_detail_note
+        assert (
+            str(error)
+            in metadata_fsentry.get_premis_events()[0].event_outcome_detail_note
+        )
 
 
 @pytest.mark.django_db
-def test_skipped_validation(settings, make_metadata_file):
+def test_skipped_validation(settings, make_metadata_file, make_mock_mets):
     settings.METADATA_XML_VALIDATION_ENABLED = True
     settings.XML_VALIDATION = {"foo": None}
     source_metadata_csv_contents = """filename,metadata,type
@@ -152,13 +164,13 @@ objects,invalid.xml,none
         SIP_DIR
     )
     metadata_file = make_metadata_file(metadata_file_rel_path)
-    mets = metsrw.METSDocument.fromfile(BASE_METS)
-    md_fsentry = add_metadata_file_to_mets(mets, metadata_file_rel_path, metadata_file)
-    objects = mets.get_file(label="objects", type="Directory")
-    mets, errors = process_xml_metadata(mets, SIP_DIR, SIP_UUID, "sip_type")
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    objects_fsentry = mock_mets.get_file(path="objects")
+    metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
     assert errors == []
-    assert objects.dmdsecs[0].status == "original"
-    assert objects.dmdsecs[0].contents.mdtype == "OTHER"
-    assert objects.dmdsecs[0].contents.othermdtype == "none"
-    assert objects.dmdsecs[0].contents.document.tag == "foo"
-    assert md_fsentry.get_premis_events() == []
+    assert objects_fsentry.dmdsecs[0].status == "original"
+    assert objects_fsentry.dmdsecs[0].contents.mdtype == "OTHER"
+    assert objects_fsentry.dmdsecs[0].contents.othermdtype == "none"
+    assert objects_fsentry.dmdsecs[0].contents.document.tag == "foo"
+    assert metadata_fsentry.get_premis_events() == []

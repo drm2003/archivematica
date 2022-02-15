@@ -59,7 +59,7 @@ from main.models import (
 
 import archivematicaCreateMETSReingest
 from archivematicaCreateMETSMetadataCSV import parseMetadata
-from archivematicaCreateMETSMetadataXML import process_xml_metadata
+import archivematicaCreateMETSMetadataXML
 from archivematicaCreateMETSRights import archivematicaGetRights
 from archivematicaCreateMETSRightsDspaceMDRef import (
     archivematicaCreateMETSRightsDspaceMDRef,
@@ -1894,7 +1894,7 @@ def main(
         mets = metsrw.METSDocument.fromtree(root)
 
     # The mets variable is now a metsrw instance on ingest and re-ingest
-    mets, xml_metadata_errors = process_xml_metadata(
+    mets, xml_metadata_errors = archivematicaCreateMETSMetadataXML.process_xml_metadata(
         mets, baseDirectoryPath, sipUUID, sipType
     )
 
