@@ -174,3 +174,45 @@ objects,invalid.xml,none
     assert objects_fsentry.dmdsecs[0].contents.othermdtype == "none"
     assert objects_fsentry.dmdsecs[0].contents.document.tag == "foo"
     assert metadata_fsentry.get_premis_events() == []
+
+
+@pytest.mark.django_db
+def test_source_metadata_errors(settings, make_mock_mets):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo": None}
+    mock_mets = make_mock_mets()
+    source_metadata_csv_contents = """filename,metadata,type
+valid.xml,none
+,valid.xml,none
+objects,valid.xml
+objects,valid.xml,
+"""
+    update_source_metadata_csv(
+        TRANSFER_SOURCE_METADATA_CSV, source_metadata_csv_contents
+    )
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    assert len(errors) == 4
+    for error in errors:
+        assert "missing the filename and/or type" in error
+    source_metadata_csv_contents = """filename,metadata,type
+objects,valid.xml,CUSTOM
+"""
+    update_source_metadata_csv(
+        TRANSFER_SOURCE_METADATA_CSV, source_metadata_csv_contents
+    )
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    assert "is using CUSTOM, a reserved type" in errors[0]
+    source_metadata_csv_contents = """filename,metadata,type
+objects,valid.xml,mdtype
+objects,invalid.xml,mdtype
+"""
+    update_source_metadata_csv(
+        TRANSFER_SOURCE_METADATA_CSV, source_metadata_csv_contents
+    )
+    mock_mets, errors = process_xml_metadata(mock_mets, SIP_DIR, SIP_UUID, "sip_type")
+    assert (
+        "More than one entry in {} for path objects and type mdtype".format(
+            TRANSFER_SOURCE_METADATA_CSV
+        )
+        in errors[0]
+    )
