@@ -134,6 +134,17 @@ def test_disabled_settings(settings, make_mock_mets):
 
 
 @pytest.mark.django_db
+def test_no_source_metadata_csv(settings, make_mock_mets, sip):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo", None}
+    mock_mets = make_mock_mets()
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    objects_fsentry = mock_mets.get_file(label="objects")
+    assert errors == []
+    assert objects_fsentry.dmdsecs == []
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("schema", ["xsd", "dtd", "rng"])
 def test_validation_success(
     settings, make_metadata_file, make_mock_mets, make_schema_file, sip, schema
