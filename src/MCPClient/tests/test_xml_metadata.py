@@ -89,9 +89,14 @@ def make_metadata_file(sip):
 @pytest.fixture()
 def make_mock_mets(mocker):
     def _make_mock_mets(metadata_file_uuids=[]):
-        files = [metsrw.FSEntry(path="objects")]
+        sip = metsrw.FSEntry(label="sip", type="Directory")
+        objects = metsrw.FSEntry(label="objects", type="Directory")
+        directory = metsrw.FSEntry(label="directory", type="Directory")
+        file_txt = metsrw.FSEntry(label="file.txt")
+        sip.add_child(objects).add_child(directory).add_child(file_txt)
+        files = [sip, objects, directory, file_txt]
         for uuid in metadata_file_uuids:
-            files.append(metsrw.FSEntry(file_uuid=uuid))
+            files.append(metsrw.FSEntry(file_uuid=uuid, use="metadata"))
         mock_mets = mocker.Mock()
         mock_mets.all_files.return_value = files
         mock_mets.get_file.side_effect = lambda **kwargs: next(
@@ -116,7 +121,7 @@ def test_invalid_settings(settings):
 
 def test_disabled_settings(settings, make_mock_mets):
     mock_mets = make_mock_mets()
-    objects_fsentry = mock_mets.get_file(path="objects")
+    objects_fsentry = mock_mets.get_file(label="objects")
     settings.METADATA_XML_VALIDATION_ENABLED = False
     mock_mets, errors = process_xml_metadata(mock_mets, "", "", "")
     assert objects_fsentry.dmdsecs == []
@@ -144,7 +149,7 @@ objects,valid.xml,mdtype
     metadata_file = make_metadata_file(metadata_file_rel_path)
     mock_mets = make_mock_mets([str(metadata_file.uuid)])
     mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
-    objects_fsentry = mock_mets.get_file(path="objects")
+    objects_fsentry = mock_mets.get_file(label="objects")
     metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
     assert errors == []
     assert objects_fsentry.dmdsecs[0].status == "original"
@@ -170,7 +175,7 @@ objects,invalid.xml,mdtype
     metadata_file = make_metadata_file(metadata_file_rel_path)
     mock_mets = make_mock_mets([str(metadata_file.uuid)])
     mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
-    objects_fsentry = mock_mets.get_file(path="objects")
+    objects_fsentry = mock_mets.get_file(label="objects")
     metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
     assert len(errors) > 0
     assert objects_fsentry.dmdsecs == []
@@ -195,7 +200,7 @@ objects,invalid.xml,none
     metadata_file = make_metadata_file(metadata_file_rel_path)
     mock_mets = make_mock_mets([str(metadata_file.uuid)])
     mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
-    objects_fsentry = mock_mets.get_file(path="objects")
+    objects_fsentry = mock_mets.get_file(label="objects")
     metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
     assert errors == []
     assert objects_fsentry.dmdsecs[0].status == "original"
@@ -292,3 +297,36 @@ objects,valid.xml,mdtype
         'validation-source="{}";'.format(schema_path)
         in metadata_fsentry.get_premis_events()[0].event_detail
     )
+
+
+@pytest.mark.django_db
+def test_multiple_dmdsecs(settings, make_metadata_file, make_mock_mets, sip):
+    mdkeys = ["foo", "foo_2", "foo_3"]
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {}
+    csv_contents = "filename,metadata,type\n"
+    metadata_file_uuids = []
+    for mdkey in mdkeys:
+        settings.XML_VALIDATION[mdkey] = None
+        csv_contents += "objects,{}.xml,{}\n".format(mdkey, mdkey)
+        csv_contents += "objects/directory,{}.xml,{}\n".format(mdkey, mdkey)
+        csv_contents += "objects/directory/file.txt,{}.xml,{}\n".format(mdkey, mdkey)
+        metadata_file_rel_path = TRANSFER_METADATA_DIR / "{}.xml".format(mdkey)
+        metadata_file = make_metadata_file(metadata_file_rel_path)
+        metadata_file_path = sip.currentpath / metadata_file_rel_path
+        metadata_file_path.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?><{}/>'.format(mdkey)
+        )
+        metadata_file_uuids.append(str(metadata_file.uuid))
+    metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
+    metadata_csv_path.write_text(csv_contents)
+    mock_mets = make_mock_mets(metadata_file_uuids)
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert errors == []
+    for label in ["objects", "directory", "file.txt"]:
+        fsentry = mock_mets.get_file(label=label)
+        assert len(fsentry.dmdsecs) == 3
+        for mdkey in mdkeys:
+            dmdsec = fsentry.dmdsecs_mapping["OTHER_{}".format(mdkey)][0]
+            assert dmdsec.contents.othermdtype == mdkey
+            assert dmdsec.contents.document.tag == mdkey
