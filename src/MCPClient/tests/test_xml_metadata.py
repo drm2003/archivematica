@@ -240,3 +240,55 @@ objects,invalid.xml,mdtype
         )
         in errors[0]
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "validation_key, should_error",
+    [
+        ("http://foo.com/foo_no_namespace_schema.xsd", False),
+        ("http://foo.com/foo_schema.xsd", False),
+        ("http://foo.com/foo_namespace.xsd", False),
+        ("foo", False),
+        ("bar", True),
+    ],
+)
+def test_schema_uri_retrieval(
+    settings,
+    make_metadata_file,
+    make_mock_mets,
+    make_schema_file,
+    sip,
+    validation_key,
+    should_error,
+):
+    schema_path = make_schema_file("xsd")
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {validation_key: schema_path}
+    source_metadata_csv_contents = """filename,metadata,type
+objects,valid.xml,mdtype
+"""
+    metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    metadata_file_contents = """<?xml version="1.0" encoding="UTF-8"?>
+<foo:foo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:foo="http://foo.com/foo_namespace.xsd"
+    xsi:schemaLocation="http://foo.com/foo http://foo.com/foo_schema.xsd"
+    xsi:noNamespaceSchemaLocation="http://foo.com/foo_no_namespace_schema.xsd"
+/>
+"""
+    metadata_file_rel_path = TRANSFER_METADATA_DIR / "valid.xml"
+    metadata_file = make_metadata_file(metadata_file_rel_path)
+    metadata_file_path = sip.currentpath / metadata_file_rel_path
+    metadata_file_path.write_text(metadata_file_contents)
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    metadata_fsentry = mock_mets.get_file(file_uuid=str(metadata_file.uuid))
+    if should_error:
+        assert "XML validation schema not found for keys:" in str(errors[0])
+        assert metadata_fsentry.get_premis_events() == []
+        return
+    assert (
+        'validation-source="{}";'.format(schema_path)
+        in metadata_fsentry.get_premis_events()[0].event_detail
+    )
