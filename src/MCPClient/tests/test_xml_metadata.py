@@ -19,6 +19,8 @@ from archivematicaCreateMETSMetadataXML import process_xml_metadata
 METADATA_DIR = Path("objects") / "metadata"
 TRANSFER_METADATA_DIR = METADATA_DIR / "transfers" / "transfer_a"
 TRANSFER_SOURCE_METADATA_CSV = TRANSFER_METADATA_DIR / "source-metadata.csv"
+VALID_XML = '<?xml version="1.0" encoding="UTF-8"?><foo><bar/></foo>'
+INVALID_XML = '<?xml version="1.0" encoding="UTF-8"?><foo/>'
 SCHEMAS = {
     "xsd": """<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema  xmlns:xs="http://www.w3.org/2001/XMLSchema">
@@ -61,12 +63,8 @@ def sip(tmp_path):
     sip_dir = tmp_path / "sip_dir"
     transfer_metadata_dir = sip_dir / TRANSFER_METADATA_DIR
     transfer_metadata_dir.mkdir(parents=True)
-    (transfer_metadata_dir / "valid.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?><foo><bar/></foo>'
-    )
-    (transfer_metadata_dir / "invalid.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?><foo/>'
-    )
+    (transfer_metadata_dir / "valid.xml").write_text(VALID_XML)
+    (transfer_metadata_dir / "invalid.xml").write_text(INVALID_XML)
     return SIP.objects.create(
         uuid=uuid4(),
         sip_type="SIP",
@@ -341,3 +339,84 @@ def test_multiple_dmdsecs(settings, make_metadata_file, make_mock_mets, sip):
             dmdsec = fsentry.dmdsecs_mapping["OTHER_{}".format(mdkey)][0]
             assert dmdsec.contents.othermdtype == mdkey
             assert dmdsec.contents.document.tag == mdkey
+
+
+@pytest.mark.django_db
+def test_reingest(settings, make_schema_file, make_metadata_file, make_mock_mets, sip):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo": make_schema_file("xsd")}
+    source_metadata_csv_contents = """filename,metadata,type
+objects,valid.xml,mdtype
+"""
+    metadata_csv_path = sip.currentpath / METADATA_DIR / "source-metadata.csv"
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    valid_md_file_rel_path = METADATA_DIR / "valid.xml"
+    valid_md_file = make_metadata_file(valid_md_file_rel_path)
+    (sip.currentpath / valid_md_file_rel_path).write_text(VALID_XML)
+    invalid_md_file_rel_path = METADATA_DIR / "invalid.xml"
+    invalid_md_file = make_metadata_file(invalid_md_file_rel_path)
+    (sip.currentpath / invalid_md_file_rel_path).write_text(INVALID_XML)
+    mock_mets = make_mock_mets([str(valid_md_file.uuid), str(invalid_md_file.uuid)])
+    objects_fsentry = mock_mets.get_file(label="objects")
+    objects_fsentry.add_dmdsec("<foo><bar/></foo>", "OTHER", othermdtype="mdtype")
+    valid_md_fsentry = mock_mets.get_file(file_uuid=str(valid_md_file.uuid))
+    invalid_md_fsentry = mock_mets.get_file(file_uuid=str(invalid_md_file.uuid))
+    mock_mets, errors = process_xml_metadata(
+        mock_mets, sip.currentpath, sip.uuid, "REIN"
+    )
+    assert errors == []
+    assert len(objects_fsentry.dmdsecs) == 2
+    assert len(objects_fsentry.dmdsecs_mapping["OTHER_mdtype"]) == 2
+    assert objects_fsentry.dmdsecs[0].status == "original-superseded"
+    assert objects_fsentry.dmdsecs[1].status == "update"
+    assert objects_fsentry.dmdsecs[0].group_id is not None
+    assert objects_fsentry.dmdsecs[0].group_id == objects_fsentry.dmdsecs[1].group_id
+    assert len(valid_md_fsentry.get_premis_events()) == 1
+    assert valid_md_fsentry.get_premis_events()[0].event_outcome == "pass"
+    mock_mets, errors = process_xml_metadata(
+        mock_mets, sip.currentpath, sip.uuid, "REIN"
+    )
+    assert errors == []
+    assert len(objects_fsentry.dmdsecs) == 3
+    assert len(objects_fsentry.dmdsecs_mapping["OTHER_mdtype"]) == 3
+    assert objects_fsentry.dmdsecs[1].status == "update-superseded"
+    assert objects_fsentry.dmdsecs[2].status == "update"
+    assert objects_fsentry.dmdsecs[0].group_id == objects_fsentry.dmdsecs[2].group_id
+    assert len(valid_md_fsentry.get_premis_events()) == 2
+    assert valid_md_fsentry.get_premis_events()[1].event_outcome == "pass"
+    source_metadata_csv_contents = """filename,metadata,type
+objects,,mdtype
+"""
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    mock_mets, errors = process_xml_metadata(
+        mock_mets, sip.currentpath, sip.uuid, "REIN"
+    )
+    assert errors == []
+    assert len(objects_fsentry.dmdsecs) == 3
+    assert len(objects_fsentry.dmdsecs_mapping["OTHER_mdtype"]) == 3
+    assert objects_fsentry.dmdsecs[2].status == "deleted"
+    assert len(valid_md_fsentry.get_premis_events()) == 2
+    source_metadata_csv_contents = """filename,metadata,type
+objects,invalid.xml,mdtype
+"""
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    mock_mets, errors = process_xml_metadata(
+        mock_mets, sip.currentpath, sip.uuid, "REIN"
+    )
+    assert len(errors) > 0
+    assert len(objects_fsentry.dmdsecs) == 3
+    assert len(objects_fsentry.dmdsecs_mapping["OTHER_mdtype"]) == 3
+    assert objects_fsentry.dmdsecs[2].status == "deleted"
+    assert len(invalid_md_fsentry.get_premis_events()) == 1
+    assert invalid_md_fsentry.get_premis_events()[0].event_outcome == "fail"
+    settings.XML_VALIDATION = {"foo": None}
+    mock_mets, errors = process_xml_metadata(
+        mock_mets, sip.currentpath, sip.uuid, "REIN"
+    )
+    assert errors == []
+    assert len(objects_fsentry.dmdsecs) == 4
+    assert len(objects_fsentry.dmdsecs_mapping["OTHER_mdtype"]) == 4
+    assert objects_fsentry.dmdsecs[2].status == "deleted-superseded"
+    assert objects_fsentry.dmdsecs[3].status == "update"
+    assert objects_fsentry.dmdsecs[0].group_id == objects_fsentry.dmdsecs[3].group_id
+    assert len(invalid_md_fsentry.get_premis_events()) == 1
