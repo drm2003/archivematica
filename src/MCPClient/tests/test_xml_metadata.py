@@ -53,7 +53,7 @@ def make_schema_file(tmp_path):
         schema_path = tmp_path / (schema_type + "." + schema_type)
         schema_path.write_text(SCHEMAS[schema_type])
 
-        return str(schema_path)
+        return schema_path
 
     return _make_schema_file
 
@@ -148,7 +148,7 @@ def test_validation_success(
     settings, make_metadata_file, make_mock_mets, make_schema_file, sip, schema
 ):
     settings.METADATA_XML_VALIDATION_ENABLED = True
-    settings.XML_VALIDATION = {"foo": make_schema_file(schema)}
+    settings.XML_VALIDATION = {"foo": str(make_schema_file(schema))}
     source_metadata_csv_contents = """filename,metadata,type
 objects,valid.xml,mdtype
 """
@@ -174,7 +174,7 @@ def test_validation_error(
     settings, make_metadata_file, make_mock_mets, make_schema_file, sip, schema
 ):
     settings.METADATA_XML_VALIDATION_ENABLED = True
-    settings.XML_VALIDATION = {"foo": make_schema_file(schema)}
+    settings.XML_VALIDATION = {"foo": str(make_schema_file(schema))}
     source_metadata_csv_contents = """filename,metadata,type
 objects,invalid.xml,mdtype
 """
@@ -201,7 +201,7 @@ def test_skipped_validation(settings, make_metadata_file, make_mock_mets, sip):
     settings.METADATA_XML_VALIDATION_ENABLED = True
     settings.XML_VALIDATION = {"foo": None}
     source_metadata_csv_contents = """filename,metadata,type
-objects,invalid.xml,none
+objects,invalid.xml,mdtype
 """
     metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
     metadata_csv_path.write_text(source_metadata_csv_contents)
@@ -214,9 +214,37 @@ objects,invalid.xml,none
     assert errors == []
     assert objects_fsentry.dmdsecs[0].status == "original"
     assert objects_fsentry.dmdsecs[0].contents.mdtype == "OTHER"
-    assert objects_fsentry.dmdsecs[0].contents.othermdtype == "none"
+    assert objects_fsentry.dmdsecs[0].contents.othermdtype == "mdtype"
     assert objects_fsentry.dmdsecs[0].contents.document.tag == "foo"
     assert metadata_fsentry.get_premis_events() == []
+
+
+@pytest.mark.django_db
+def test_validation_schema_errors(
+    settings, make_metadata_file, make_mock_mets, make_schema_file, sip
+):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo": "bad_path.xsd"}
+    source_metadata_csv_contents = """filename,metadata,type
+objects,valid.xml,mdtype
+"""
+    metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    metadata_file_rel_path = TRANSFER_METADATA_DIR / "valid.xml"
+    metadata_file = make_metadata_file(metadata_file_rel_path)
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert "XML schema local path bad_path.xsd must be absolute" in errors[0]
+    schema_file = make_schema_file("xsd")
+    schema_file.write_text("")
+    settings.XML_VALIDATION = {"foo": str(schema_file)}
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert "Could not parse schema file" in errors[0]
+    unk_schema_file = schema_file.with_suffix(".unk")
+    unk_schema_file.write_text("")
+    settings.XML_VALIDATION = {"foo": str(unk_schema_file)}
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert "Unknown XML validation schema type: unk" in errors[0]
 
 
 @pytest.mark.django_db
@@ -276,7 +304,7 @@ def test_schema_uri_retrieval(
     validation_key,
     should_error,
 ):
-    schema_path = make_schema_file("xsd")
+    schema_path = str(make_schema_file("xsd"))
     settings.METADATA_XML_VALIDATION_ENABLED = True
     settings.XML_VALIDATION = {validation_key: schema_path}
     source_metadata_csv_contents = """filename,metadata,type
@@ -344,7 +372,7 @@ def test_multiple_dmdsecs(settings, make_metadata_file, make_mock_mets, sip):
 @pytest.mark.django_db
 def test_reingest(settings, make_schema_file, make_metadata_file, make_mock_mets, sip):
     settings.METADATA_XML_VALIDATION_ENABLED = True
-    settings.XML_VALIDATION = {"foo": make_schema_file("xsd")}
+    settings.XML_VALIDATION = {"foo": str(make_schema_file("xsd"))}
     source_metadata_csv_contents = """filename,metadata,type
 objects,valid.xml,mdtype
 """
