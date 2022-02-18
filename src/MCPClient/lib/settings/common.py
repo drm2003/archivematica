@@ -382,6 +382,19 @@ if METADATA_XML_VALIDATION_ENABLED:
         "METADATA_XML_VALIDATION_SETTINGS_FILE", ""
     )
     if METADATA_XML_VALIDATION_SETTINGS_FILE:
-        globals().update(
-            _get_settings_from_file(Path(METADATA_XML_VALIDATION_SETTINGS_FILE))
+        xml_validation_settings = _get_settings_from_file(
+            Path(METADATA_XML_VALIDATION_SETTINGS_FILE)
         )
+        XML_VALIDATION = xml_validation_settings.get("XML_VALIDATION")
+        XML_VALIDATION_FAIL_ON_ERROR = xml_validation_settings.get(
+            "XML_VALIDATION_FAIL_ON_ERROR"
+        )
+        if not isinstance(XML_VALIDATION, dict) or not isinstance(
+            XML_VALIDATION_FAIL_ON_ERROR, bool
+        ):
+            raise ImproperlyConfigured(
+                "The metadata XML validation settings file {} does not contain "
+                "the right settings: an XML_VALIDATION dictionary and an XML_VALIDATION_FAIL_ON_ERROR boolean".format(
+                    METADATA_XML_VALIDATION_SETTINGS_FILE
+                )
+            )

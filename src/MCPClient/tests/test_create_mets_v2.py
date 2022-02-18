@@ -314,7 +314,6 @@ def test_aip_mets_normative_directory_structure(
         (True, [], does_not_raise()),
         (False, ["xml_validation_error"], does_not_raise()),
         (False, [], does_not_raise()),
-        (None, ["xml_validation_error"], pytest.raises(AttributeError)),
         (None, [], does_not_raise()),
     ],
 )

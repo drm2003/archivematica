@@ -35,10 +35,7 @@ from main import models
 
 
 def process_xml_metadata(mets, sip_dir, sip_uuid, sip_type):
-    if (
-        not mcpclient_settings.METADATA_XML_VALIDATION_ENABLED
-        or not mcpclient_settings.XML_VALIDATION
-    ):
+    if not getattr(mcpclient_settings, "XML_VALIDATION", False):
         return mets, []
     xml_metadata_mapping, xml_metadata_errors = _get_xml_metadata_mapping(
         sip_dir, reingest="REIN" in sip_type

@@ -109,13 +109,6 @@ def make_mock_mets(mocker):
     return _make_mock_mets
 
 
-def test_invalid_settings(settings):
-    settings.METADATA_XML_VALIDATION_ENABLED = True
-    with pytest.raises(AttributeError) as error:
-        process_xml_metadata("", "", "", "")
-    assert "object has no attribute 'XML_VALIDATION'" in str(error)
-
-
 def test_disabled_settings(settings, make_mock_mets):
     mock_mets = make_mock_mets()
     objects_fsentry = mock_mets.get_file(label="objects")

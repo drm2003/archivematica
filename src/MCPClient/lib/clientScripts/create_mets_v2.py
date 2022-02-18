@@ -1908,7 +1908,7 @@ def main(
             ),
             file=sys.stderr,
         )
-        if mcpclient_settings.XML_VALIDATION_FAIL_ON_ERROR:
+        if getattr(mcpclient_settings, "XML_VALIDATION_FAIL_ON_ERROR", False):
             state.error_accumulator.error_count += 1
 
     if state.error_accumulator.error_count:

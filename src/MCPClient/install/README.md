@@ -387,7 +387,7 @@ These variables specify how XML files contained in the `metadata` directory of a
         - `XML_VALIDATION`: a dictionary which keys are strings that contain either an [XML schema location](https://www.w3.org/TR/xmlschema-1/#xsi_schemaLocation), an [XML namespace](https://www.w3.org/TR/xml-names/#sec-namespaces) or an XML element tag, and which values are either strings that contain an absolute local path or an external URL to an XML schema file, or `None` to indicate that no validation should be performed.
         - `XML_VALIDATION_FAIL_ON_ERROR`: a boolean that indicates if the SIP ingest workflow should stop on validation errors. Defaults to `False`.
 
-      An `ImproperlyConfigured` exception will be raised if the Python module cannot be imported.
+      An `ImproperlyConfigured` exception will be raised if the Python module cannot be imported or does not contain the required settings.
 
       The goal of the validation process is to determine a **validation key** from the root node of each XML file in the `metadata` directory of the SIP and then get an XML schema file to validate against using the `XML_VALIDATION` dictionary. If the value for the validation key is set to `None` the XML metadata file is added to the METS without any validation.
 
