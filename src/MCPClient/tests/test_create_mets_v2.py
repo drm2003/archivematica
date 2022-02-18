@@ -304,3 +304,27 @@ def test_aip_mets_normative_directory_structure(
         .get("DMDID")
         == "dmdSec_1"
     )
+
+
+def test_xml_validation_fail_on_error(mocker, settings, job, sip_path, sip, file_obj):
+    mock_mets = mocker.Mock(**{"serialize.return_value": etree.Element("tag")})
+    mocker.patch(
+        "create_mets_v2.archivematicaCreateMETSMetadataXML.process_xml_metadata",
+        return_value=(mock_mets, ["xml_validation_error"]),
+    )
+    settings.XML_VALIDATION_FAIL_ON_ERROR = True
+    with pytest.raises(Exception) as error:
+        main(
+            job,
+            sipType="SIP",
+            baseDirectoryPath=sip.currentpath,
+            XMLFile=str(sip_path / "METS.xml"),
+            sipUUID=sip.pk,
+            includeAmdSec=False,
+            createNormativeStructmap=False,
+        )
+    assert "Error generating AIP METS" in str(error)
+    assert (
+        "Error(s) processing and/or validating XML metadata:\n\t- xml_validation_error"
+        in job.get_stderr()
+    )
