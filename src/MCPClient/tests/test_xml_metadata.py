@@ -8,8 +8,10 @@ archivematicaCreateMETSMetadataXML.process_xml_metadata()
 from pathlib import Path
 from uuid import uuid4
 
+from lxml.etree import parse
 import metsrw
 import pytest
+import requests
 
 from main.models import File, SIP
 
@@ -23,7 +25,7 @@ VALID_XML = '<?xml version="1.0" encoding="UTF-8"?><foo><bar/></foo>'
 INVALID_XML = '<?xml version="1.0" encoding="UTF-8"?><foo/>'
 SCHEMAS = {
     "xsd": """<?xml version="1.0" encoding="UTF-8"?>
-<xs:schema  xmlns:xs="http://www.w3.org/2001/XMLSchema">
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
   <xs:element name="foo">
     <xs:complexType>
       <xs:sequence>
@@ -45,6 +47,10 @@ SCHEMAS = {
 </element>
 """,
 }
+IMPORTED_SCHEMA = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns="http://foo.com/1.0" targetNamespace="http://foo.com/1.0">
+</xs:schema>"""
 
 
 @pytest.fixture()
@@ -107,6 +113,91 @@ def make_mock_mets(mocker):
         return mock_mets
 
     return _make_mock_mets
+
+
+@pytest.fixture
+def requests_get(mocker):
+    # return a mock response good enough to be parsed as an XML schema
+    return mocker.patch(
+        "requests.get",
+        return_value=mocker.Mock(text=IMPORTED_SCHEMA),
+    )
+
+
+@pytest.fixture
+def requests_get_error(mocker):
+    # simulate an error retrieving an imported schema
+    return mocker.patch(
+        "requests.get",
+        side_effect=requests.RequestException("error"),
+    )
+
+
+@pytest.fixture
+def etree_parse(mocker):
+    # mocked etree.parse used in the resolver tests that returns None before the first
+    # XMLSchema call which triggers an etree.XMLSchemaParseError exception
+    # and forces reparsing the validation schema with a custom etree.Resolver
+    class mock:
+        def __init__(self, *args, **kwargs):
+            self.call_count = 0
+
+        def __call__(self, *args, **kwargs):
+            self.call_count += 1
+            # parse is called first with the metadata XML file
+            # and then with the XML validation schema
+            if self.call_count == 2:
+                return
+            return parse(*args, **kwargs)
+
+    mocker.patch(
+        "archivematicaCreateMETSMetadataXML.etree.parse",
+        mock(),
+    )
+
+
+@pytest.fixture
+def schema_with_remote_import(tmp_path):
+    # create a schema that imports a remote schema
+    schema = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:import namespace="http://foo.com/1.0" schemaLocation="http://foo.com/my.xsd" />
+  <xs:element name="foo">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="bar" type="xs:string"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+    schema_path = tmp_path / "schema.xsd"
+    schema_path.write_text(schema)
+    return schema_path
+
+
+@pytest.fixture
+def schema_with_local_import(tmp_path):
+    # create a schema that imports a local schema
+    schema = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:import namespace="http://foo.com/1.0" schemaLocation="my.xsd" />
+  <xs:element name="foo">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="bar" type="xs:string"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+    schema_path = tmp_path / "schema.xsd"
+    schema_path.write_text(schema)
+
+    local_schema = tmp_path / "my.xsd"
+    local_schema.write_text(IMPORTED_SCHEMA)
+
+    return schema_path
 
 
 def test_disabled_settings(settings, make_mock_mets):
@@ -440,3 +531,86 @@ objects,invalid.xml,mdtype
     assert objects_fsentry.dmdsecs[3].status == "update"
     assert objects_fsentry.dmdsecs[0].group_id == objects_fsentry.dmdsecs[3].group_id
     assert len(invalid_md_fsentry.get_premis_events()) == 1
+
+
+@pytest.mark.django_db
+def test_resolver(
+    settings,
+    make_metadata_file,
+    make_mock_mets,
+    sip,
+    etree_parse,
+    requests_get,
+    schema_with_remote_import,
+):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo": str(schema_with_remote_import)}
+    source_metadata_csv_contents = "\n".join(
+        [
+            "filename,metadata,type",
+            "objects,valid.xml,mdtype",
+        ]
+    )
+    metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    metadata_file_rel_path = TRANSFER_METADATA_DIR / "valid.xml"
+    metadata_file = make_metadata_file(metadata_file_rel_path)
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert not errors
+    requests_get.assert_called_once_with("http://foo.com/my.xsd")
+
+
+@pytest.mark.django_db
+def test_resolver_with_requests_error(
+    settings,
+    make_metadata_file,
+    make_mock_mets,
+    sip,
+    etree_parse,
+    requests_get_error,
+    schema_with_remote_import,
+):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo": str(schema_with_remote_import)}
+    source_metadata_csv_contents = "\n".join(
+        [
+            "filename,metadata,type",
+            "objects,valid.xml,mdtype",
+        ]
+    )
+    metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    metadata_file_rel_path = TRANSFER_METADATA_DIR / "valid.xml"
+    metadata_file = make_metadata_file(metadata_file_rel_path)
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert not errors
+
+
+@pytest.mark.django_db
+def test_resolver_with_local_import(
+    settings,
+    make_metadata_file,
+    make_mock_mets,
+    sip,
+    etree_parse,
+    requests_get,
+    schema_with_local_import,
+):
+    settings.METADATA_XML_VALIDATION_ENABLED = True
+    settings.XML_VALIDATION = {"foo": str(schema_with_local_import)}
+    source_metadata_csv_contents = "\n".join(
+        [
+            "filename,metadata,type",
+            "objects,valid.xml,mdtype",
+        ]
+    )
+    metadata_csv_path = sip.currentpath / TRANSFER_SOURCE_METADATA_CSV
+    metadata_csv_path.write_text(source_metadata_csv_contents)
+    metadata_file_rel_path = TRANSFER_METADATA_DIR / "valid.xml"
+    metadata_file = make_metadata_file(metadata_file_rel_path)
+    mock_mets = make_mock_mets([str(metadata_file.uuid)])
+    mock_mets, errors = process_xml_metadata(mock_mets, sip.currentpath, sip.uuid, "")
+    assert not errors
+    requests_get.assert_not_called()
