@@ -320,7 +320,12 @@ def test_aip_mets_normative_directory_structure(
 def test_xml_validation_fail_on_error(
     mocker, settings, job, sip_path, sip, file_obj, fail_on_error, errors, expectation
 ):
-    mock_mets = mocker.Mock(**{"serialize.return_value": etree.Element("tag")})
+    mock_mets = mocker.Mock(
+        **{
+            "serialize.return_value": etree.Element("tag"),
+            "get_subsections_counts.return_value": {},
+        }
+    )
     mocker.patch(
         "create_mets_v2.archivematicaCreateMETSMetadataXML.process_xml_metadata",
         return_value=(mock_mets, errors),

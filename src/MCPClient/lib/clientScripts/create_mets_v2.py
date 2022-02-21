@@ -1884,12 +1884,6 @@ def main(
         if arranged_structmap is not None:
             root.append(arranged_structmap)
 
-        job.pyprint("DmdSecs:", state.globalDmdSecCounter)
-        job.pyprint("AmdSecs:", state.globalAmdSecCounter)
-        job.pyprint("TechMDs:", state.globalTechMDCounter)
-        job.pyprint("RightsMDs:", state.globalRightsMDCounter)
-        job.pyprint("DigiprovMDs:", state.globalDigiprovMDCounter)
-
         # Parse METS to metsrw
         mets = metsrw.METSDocument.fromtree(root)
 
@@ -1897,6 +1891,11 @@ def main(
     mets, xml_metadata_errors = archivematicaCreateMETSMetadataXML.process_xml_metadata(
         mets, baseDirectoryPath, sipUUID, sipType
     )
+
+    subsections_counts = mets.get_subsections_counts()
+    job.pyprint("METS file subsections counts:")
+    for subsection, count in subsections_counts.items():
+        job.pyprint("\t- {} entries: {}".format(subsection, count))
 
     tree = mets.serialize(normative_structmap=createNormativeStructmap)
     write_mets(etree.ElementTree(tree), XMLFile)
