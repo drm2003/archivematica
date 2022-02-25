@@ -1,11 +1,11 @@
 ---
 name: "Acceptance Test"
 on:
-  pull_request:
-    types: [labeled]
+  push:
+    branches:
+      - "dev/amauats-ss-v0.19.0-rc.2"
 jobs:
   test:
-    if: github.event.label.name == 'AMAUAT'
     name: "Test ${{ matrix.tag }} ${{ matrix.python_version }} on ${{ matrix.browser }}"
     runs-on: "ubuntu-18.04"
     strategy:
